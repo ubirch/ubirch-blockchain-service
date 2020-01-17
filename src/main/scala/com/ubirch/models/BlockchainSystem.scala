@@ -1,19 +1,12 @@
 package com.ubirch.models
 
-import java.io.{ BufferedReader, IOException, InputStream, InputStreamReader }
-import java.util.Date
-
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
-import com.ubirch.models.BlockchainProcessors.EthereumProcessor.getClass
-import com.ubirch.services.BlockchainBucket.conf
-import com.ubirch.util.Exceptions.{ EthereumBlockchainException, GettingNonceException, GettingTXReceiptExceptionTXException, NoTXHashException, SendingTXException }
-import org.bouncycastle.util.encoders.Hex
-import org.web3j.crypto.{ RawTransaction, SignedRawTransaction, TransactionEncoder, WalletUtils }
+import com.ubirch.util.Exceptions._
+import org.web3j.crypto.{RawTransaction, TransactionEncoder, WalletUtils}
 import org.web3j.protocol.Web3j
-import org.web3j.protocol.core.{ DefaultBlockParameter, DefaultBlockParameterName }
+import org.web3j.protocol.core.DefaultBlockParameterName
 import org.web3j.protocol.http.HttpService
-import org.web3j.tx.RawTransactionManager
 import org.web3j.utils.Convert
 import org.web3j.utils.Numeric
 
@@ -69,22 +62,18 @@ object BlockchainProcessors {
 
   implicit object EthereumProcessor extends BlockchainProcessor[EthereumBlockchain, Data] with ConfigBase with LazyLogging {
 
-    val config = conf.getConfig("blockchainAnchoring.ethereum")
-
-    val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
-    val password = config.getString("password")
-
-    val address = config.getString("toAddress")
-    val gasPrice = config.getString("gasPrice")
-    val gasLimit: BigInt = config.getString("gasLimit").toInt
-
-    val networkInfo = config.getString("networkInfo")
-    val networkType = config.getString("networkType")
-    val chainId = config.getInt("chainId")
-
-    val url = config.getString("url")
-    val web3 = Web3j.build(new HttpService(url))
-    val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
+    final val config = conf.getConfig("blockchainAnchoring.ethereum")
+    final val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
+    final val password = config.getString("password")
+    final val address = config.getString("toAddress")
+    final val gasPrice = config.getString("gasPrice")
+    final val gasLimit: BigInt = config.getString("gasLimit").toInt
+    final val networkInfo = config.getString("networkInfo")
+    final val networkType = config.getString("networkType")
+    final val chainId = config.getInt("chainId")
+    final val url = config.getString("url")
+    final val web3 = Web3j.build(new HttpService(url))
+    final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
 
     override def process(data: Seq[Data]): Either[Option[Response], Throwable] = {
 
