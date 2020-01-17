@@ -6,6 +6,7 @@ import com.ubirch.util.Exceptions._
 import org.web3j.crypto.{RawTransaction, TransactionEncoder, WalletUtils}
 import org.web3j.protocol.Web3j
 import org.web3j.protocol.core.DefaultBlockParameterName
+import org.web3j.protocol.core.methods.response.{EthSendTransaction, TransactionReceipt}
 import org.web3j.protocol.http.HttpService
 import org.web3j.utils.Convert
 import org.web3j.utils.Numeric
@@ -16,11 +17,15 @@ import scala.language.higherKinds
 
 object BlockchainSystem {
 
-  case class Data(value: String)
+  sealed trait BlockchainType {
+    val value: String
+  }
 
   trait BlockchainProcessor[Block[_], D] {
     def process(data: Seq[D]): Either[Option[Response], Throwable]
   }
+
+  case class Data(value: String)
 
   case class EthereumBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumBlockchain, D]) {
     def process = processor.process(data)
@@ -29,14 +34,10 @@ object BlockchainSystem {
   case class EthereumClassicBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumClassicBlockchain, D]) {
     def process = processor.process(data)
   }
+  //
 
   case class IOTABlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[IOTABlockchain, D]) {
     def process = processor.process(data)
-  }
-  //
-
-  sealed trait BlockchainType {
-    val value: String
   }
 
   object BlockchainType {
@@ -74,6 +75,8 @@ object BlockchainProcessors {
     final val url = config.getString("url")
     final val web3 = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
+    final val DEFAULT_SLEEP_MILLIS = 5000
+    final val MAX_RECEIPT_ATTEMPTS = 30
 
     override def process(data: Seq[Data]): Either[Option[Response], Throwable] = {
 
@@ -81,64 +84,15 @@ object BlockchainProcessors {
 
       try {
 
-        val transactionCountResponse = web3.ethGetTransactionCount(address, DefaultBlockParameterName.LATEST).send()
-        if (transactionCountResponse.hasError) throw GettingNonceException("Error getting transaction count(nonce)", Option(transactionCountResponse.getError))
-
-        val rawTransaction = RawTransaction.createTransaction(
-          transactionCountResponse.getTransactionCount,
-          Convert.toWei(gasPrice, Convert.Unit.GWEI).toBigInteger,
-          gasLimit.bigInteger,
-          address,
-          message
-        )
-
-        val signedMessage = TransactionEncoder.signMessage(rawTransaction, chainId, credentials)
-        val hexMessage = Numeric.toHexString(signedMessage)
-        val sendTransactionResponse = web3.ethSendRawTransaction(hexMessage).send()
-        if (sendTransactionResponse.hasError) throw SendingTXException("Error sending transaction ", Option(sendTransactionResponse.getError))
-
-        val txHash = sendTransactionResponse.getTransactionHash
-
-        if (txHash == null || txHash.isEmpty) {
-          throw NoTXHashException("No transaction hash retrieved after sending ")
+        val hexMessage = createTransactionAsHexMessage(message, getCount())
+        val txHash = sendTransaction(hexMessage)
+        val maybeResponse = getReceipt(txHash).map { _ =>
+          Response.Added(txHash, message, EthereumType.value, networkInfo, networkType)
+        }.orElse {
+          Option(Response.Timeout(txHash, message, EthereumType.value, networkInfo, networkType))
         }
 
-        def getReceipt(maxRetries: Int = 10) = {
-
-          @tailrec
-          def go(count: Int): Option[Response] = {
-
-            if (count == 0) {
-              logger.error("tx=KO")
-              Option(Response.Timeout(sendTransactionResponse.getTransactionHash, message, EthereumType.value, networkInfo, networkType))
-            } else {
-
-              logger.info("Trying to get tx receipt, retry={} ...", count)
-
-              val getTransactionReceiptRequest = web3.ethGetTransactionReceipt(txHash).send()
-              if (sendTransactionResponse.hasError) throw GettingTXReceiptExceptionTXException("Error sending transaction ", Option(sendTransactionResponse.getError))
-
-              val maybeTransactionReceipt = getTransactionReceiptRequest.getTransactionReceipt.asScala
-
-              val maybeReceipt = maybeTransactionReceipt.map { _ =>
-                logger.info("tx=OK")
-                Response.Added(sendTransactionResponse.getTransactionHash, message, EthereumType.value, networkInfo, networkType)
-              }
-
-              if (maybeReceipt.isEmpty) {
-                Thread.sleep(5000)
-                go(count - 1)
-              } else maybeReceipt
-
-            }
-
-          }
-
-          go(maxRetries)
-
-        }
-
-        Left(getReceipt())
+        Left(maybeResponse)
 
       } catch {
         case e: EthereumBlockchainException if !e.isCritical =>
@@ -153,6 +107,78 @@ object BlockchainProcessors {
       }
 
     }
+
+    def getReceipt(txHash: String, maxRetries: Int = MAX_RECEIPT_ATTEMPTS): Option[TransactionReceipt] = {
+
+      def receipt = {
+        val getTransactionReceiptRequest = web3.ethGetTransactionReceipt(txHash).send()
+        if (getTransactionReceiptRequest.hasError) throw GettingTXReceiptExceptionTXException("Error getting transaction receipt ", Option(getTransactionReceiptRequest.getError))
+        getTransactionReceiptRequest.getTransactionReceipt.asScala
+      }
+
+      @tailrec
+      def go(count: Int, sleepInMillis: Int = DEFAULT_SLEEP_MILLIS): Option[TransactionReceipt] = {
+
+        if (count == 0)
+          None
+        else {
+
+          logger.info("receipt_attempt={} sleepInMillis={} ...", count, sleepInMillis)
+
+          val maybeReceipt = receipt
+
+          if (maybeReceipt.isEmpty) {
+            val sleep = if(sleepInMillis <= 0) DEFAULT_SLEEP_MILLIS else sleepInMillis
+            Thread.sleep(sleep)
+            go(count - 1, sleep - 1000)
+          } else maybeReceipt
+
+        }
+
+      }
+
+      go(maxRetries)
+
+    }
+
+    def sendTransaction(hexMessage: String) = {
+      val sendTransactionResponse: EthSendTransaction = web3.ethSendRawTransaction(hexMessage).send()
+      if (sendTransactionResponse.hasError) throw SendingTXException("Error sending transaction ", Option(sendTransactionResponse.getError))
+      val txHash = sendTransactionResponse.getTransactionHash
+      if (txHash == null || txHash.isEmpty) {
+        throw NoTXHashException("No transaction hash retrieved after sending ")
+      }
+
+      txHash
+    }
+
+    def createTransactionAsHexMessage(message: String, countOrNonce: BigInt) = {
+      val rawTransaction = RawTransaction.createTransaction(
+        countOrNonce.bigInteger,
+        Convert.toWei(gasPrice, Convert.Unit.GWEI).toBigInteger,
+        gasLimit.bigInteger,
+        address,
+        message
+      )
+
+      val signedMessage = TransactionEncoder.signMessage(rawTransaction, chainId, credentials)
+      val hexMessage = Numeric.toHexString(signedMessage)
+
+      hexMessage
+    }
+
+    def balance(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST) = {
+      val transactionCountResponse = web3.ethGetBalance(address, blockParameterName).send()
+      if (transactionCountResponse.hasError) throw GettingBalanceException(s"Error getting balance for address [${address}]", Option(transactionCountResponse.getError))
+      transactionCountResponse.getBalance
+    }
+
+    def getCount(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST) = {
+      val transactionCountResponse = web3.ethGetTransactionCount(address, blockParameterName).send()
+      if (transactionCountResponse.hasError) throw GettingNonceException("Error getting transaction count(nonce)", Option(transactionCountResponse.getError))
+      transactionCountResponse.getTransactionCount
+    }
+
   }
 
   implicit object EthereumClassicProcessor extends BlockchainProcessor[EthereumClassicBlockchain, Data] {
