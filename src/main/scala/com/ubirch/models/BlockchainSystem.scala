@@ -7,7 +7,7 @@ import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.models.BlockchainProcessors.EthereumProcessor.getClass
 import com.ubirch.services.BlockchainBucket.conf
-import com.ubirch.util.Exceptions.{ EthereumBlockchainException, GettingNonceException, GettingTXReceiptExceptionTXException, SendingTXException }
+import com.ubirch.util.Exceptions.{ EthereumBlockchainException, GettingNonceException, GettingTXReceiptExceptionTXException, NoTXHashException, SendingTXException }
 import org.bouncycastle.util.encoders.Hex
 import org.web3j.crypto.{ RawTransaction, SignedRawTransaction, TransactionEncoder, WalletUtils }
 import org.web3j.protocol.Web3j
@@ -93,7 +93,7 @@ object BlockchainProcessors {
       try {
 
         val transactionCountResponse = web3.ethGetTransactionCount(address, DefaultBlockParameterName.LATEST).send()
-        if (transactionCountResponse.hasError) throw GettingNonceException("Error getting transaction count(nonce)", transactionCountResponse.getError)
+        if (transactionCountResponse.hasError) throw GettingNonceException("Error getting transaction count(nonce)", Option(transactionCountResponse.getError))
 
         val rawTransaction = RawTransaction.createTransaction(
           transactionCountResponse.getTransactionCount,
@@ -106,9 +106,13 @@ object BlockchainProcessors {
         val signedMessage = TransactionEncoder.signMessage(rawTransaction, chainId, credentials)
         val hexMessage = Numeric.toHexString(signedMessage)
         val sendTransactionResponse = web3.ethSendRawTransaction(hexMessage).send()
-        if (sendTransactionResponse.hasError) throw SendingTXException("Error sending transaction ", sendTransactionResponse.getError)
+        if (sendTransactionResponse.hasError) throw SendingTXException("Error sending transaction ", Option(sendTransactionResponse.getError))
 
         val txHash = sendTransactionResponse.getTransactionHash
+
+        if (txHash == null || txHash.isEmpty) {
+          throw NoTXHashException("No transaction hash retrieved after sending ")
+        }
 
         def getReceipt(maxRetries: Int = 10) = {
 
@@ -123,7 +127,7 @@ object BlockchainProcessors {
               logger.info("Trying to get tx receipt, retry={} ...", count)
 
               val getTransactionReceiptRequest = web3.ethGetTransactionReceipt(txHash).send()
-              if (sendTransactionResponse.hasError) throw GettingTXReceiptExceptionTXException("Error sending transaction ", sendTransactionResponse.getError)
+              if (sendTransactionResponse.hasError) throw GettingTXReceiptExceptionTXException("Error sending transaction ", Option(sendTransactionResponse.getError))
 
               val maybeTransactionReceipt = getTransactionReceiptRequest.getTransactionReceipt.asScala
 
@@ -149,12 +153,14 @@ object BlockchainProcessors {
 
       } catch {
         case e: EthereumBlockchainException if !e.isCritical =>
-          val error = e.error
-          logger.error("tx=KO message={} error={} code={} data={} exceptionName={}", message, error.getMessage, error.getCode, error.getData, e.getClass.getCanonicalName)
-          Left(Option(Response.Error("-", message, EthereumType.value, networkInfo, networkType)))
+          val errorMessage = e.error.map(_.getMessage).getOrElse("No Message")
+          val errorCode = e.error.map(_.getCode).getOrElse("No Error Code")
+          val errorData = e.error.map(_.getData).getOrElse("No Data")
+          logger.error("tx=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
+          Left(None)
         case e: Exception =>
           logger.error("Something critical happened: ", e)
-          throw e
+          Right(e)
       }
 
     }
