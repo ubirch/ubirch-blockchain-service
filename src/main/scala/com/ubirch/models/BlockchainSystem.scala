@@ -13,6 +13,7 @@ import org.web3j.utils.{ Convert, Numeric }
 import scala.annotation.tailrec
 import scala.compat.java8.OptionConverters._
 import scala.language.higherKinds
+import scala.util.Try
 
 object BlockchainSystem {
 
@@ -26,7 +27,7 @@ object BlockchainSystem {
     def process = processor.process(data)
   }
 
-  case class EthereumClassicBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumClassicBlockchain, D]) {
+  case class EthereumClassicBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumBlockchain, D]) {
     def process = processor.process(data)
   }
 
@@ -63,7 +64,7 @@ object BlockchainProcessors {
 
   implicit object EthereumProcessor extends BlockchainProcessor[EthereumBlockchain, Data] with ConfigBase with LazyLogging {
 
-    final val config = conf.getConfig("blockchainAnchoring.ethereum")
+    final val config = Try(conf.getConfig("blockchainAnchoring.ethereum")).getOrElse(throw NoConfigObjectFound("No object found for this blockchain"))
     final val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
     final val password = config.getString("password")
     final val address = config.getString("toAddress")
@@ -73,10 +74,11 @@ object BlockchainProcessors {
     final val networkType = config.getString("networkType")
     final val chainId = config.getInt("chainId")
     final val url = config.getString("url")
+    final val DEFAULT_SLEEP_MILLIS = config.getInt("defaultSleepMillisForReceipt")
+    final val MAX_RECEIPT_ATTEMPTS = config.getInt("maxReceiptAttempts")
+
     final val web3 = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
-    final val DEFAULT_SLEEP_MILLIS = 5000
-    final val MAX_RECEIPT_ATTEMPTS = 30
 
     override def process(data: Seq[Data]): Either[Option[Response], Throwable] = {
 
@@ -84,7 +86,10 @@ object BlockchainProcessors {
 
       try {
 
-        val hexMessage = createTransactionAsHexMessage(message, getCount())
+        val count = getCount()
+        val hexMessage = createTransactionAsHexMessage(message, count)
+
+        logger.info("Sending transaction={} with count={}", message, count)
         val txHash = sendTransaction(hexMessage)
         val maybeResponse = getReceipt(txHash).map { _ =>
           Response.Added(txHash, message, EthereumType.value, networkInfo, networkType)
@@ -99,7 +104,7 @@ object BlockchainProcessors {
           val errorMessage = e.error.map(_.getMessage).getOrElse("No Message")
           val errorCode = e.error.map(_.getCode).getOrElse("No Error Code")
           val errorData = e.error.map(_.getData).getOrElse("No Data")
-          logger.error("tx=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
+          logger.error("status=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
           Left(None)
         case e: Exception =>
           logger.error("Something critical happened: ", e)
@@ -179,10 +184,6 @@ object BlockchainProcessors {
       transactionCountResponse.getTransactionCount
     }
 
-  }
-
-  implicit object EthereumClassicProcessor extends BlockchainProcessor[EthereumClassicBlockchain, Data] {
-    override def process(data: Seq[Data]): Either[Option[Response], Throwable] = Left(None)
   }
 
   implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] {

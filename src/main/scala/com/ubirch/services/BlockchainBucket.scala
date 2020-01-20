@@ -11,7 +11,9 @@ trait BlockchainProcessorConnector extends ConfigBase {
   import com.ubirch.models.BlockchainSystem._
 
   lazy val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topic").split(",").toSet.filter(_.nonEmpty)
-  val blockchainType: BlockchainType = BlockchainType.fromString(conf.getString("blockchainAnchoring.type")).getOrElse(throw new Exception("No Blockchain type set"))
+  lazy val blockchainType: BlockchainType = BlockchainType.
+    fromString(conf.getString("blockchainAnchoring.type"))
+    .getOrElse(throw new Exception("No Blockchain type set"))
 
   logger.info("Configured blockchain={}", blockchainType.value)
 
