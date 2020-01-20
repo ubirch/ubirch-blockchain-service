@@ -3,12 +3,6 @@ package com.ubirch.models
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.util.Exceptions._
-import org.web3j.crypto.{ RawTransaction, TransactionEncoder, WalletUtils }
-import org.web3j.protocol.Web3j
-import org.web3j.protocol.core.DefaultBlockParameterName
-import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
-import org.web3j.protocol.http.HttpService
-import org.web3j.utils.{ Convert, Numeric }
 
 import scala.annotation.tailrec
 import scala.compat.java8.OptionConverters._
@@ -63,6 +57,13 @@ object BlockchainProcessors {
   import BlockchainSystem._
 
   implicit object EthereumProcessor extends BlockchainProcessor[EthereumBlockchain, Data] with ConfigBase with LazyLogging {
+
+    import org.web3j.crypto.{ RawTransaction, TransactionEncoder, WalletUtils }
+    import org.web3j.protocol.Web3j
+    import org.web3j.protocol.core.DefaultBlockParameterName
+    import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
+    import org.web3j.protocol.http.HttpService
+    import org.web3j.utils.{ Convert, Numeric }
 
     final val config = Try(conf.getConfig("blockchainAnchoring.ethereum")).getOrElse(throw NoConfigObjectFound("No object found for this blockchain"))
     final val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
