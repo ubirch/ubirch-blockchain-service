@@ -11,9 +11,7 @@ trait BlockchainProcessorConnector extends ConfigBase {
   import com.ubirch.models.BlockchainSystem._
 
   lazy val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topic").split(",").toSet.filter(_.nonEmpty)
-  lazy val blockchainType: BlockchainType = BlockchainType.
-    fromString(conf.getString("blockchainAnchoring.type"))
-    .getOrElse(throw new Exception("No Blockchain type set"))
+  lazy val blockchainType: BlockchainType = BlockchainType.fromString(conf.getString("blockchainAnchoring.type")).getOrElse(throw new Exception("No Blockchain type set"))
 
   logger.info("Configured blockchain={}", blockchainType.value)
 
@@ -30,6 +28,8 @@ trait BlockchainProcessorConnector extends ConfigBase {
       response match {
         case Left(Some(value)) => producerTopics.map(topic => send(topic, BlockchainJsonSupport.ToJson[Response](value).toString()))
         case Left(None) =>
+        //No need to react to this response as this type of response is intended to be a not critical blockchain exception/error, with is
+        //totally OK to just let go and continue with other values.
         case Right(exception) => throw exception
       }
 
