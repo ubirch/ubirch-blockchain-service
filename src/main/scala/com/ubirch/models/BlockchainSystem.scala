@@ -3,13 +3,12 @@ package com.ubirch.models
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.util.Exceptions._
-import org.web3j.crypto.{RawTransaction, TransactionEncoder, WalletUtils}
+import org.web3j.crypto.{ RawTransaction, TransactionEncoder, WalletUtils }
 import org.web3j.protocol.Web3j
 import org.web3j.protocol.core.DefaultBlockParameterName
-import org.web3j.protocol.core.methods.response.{EthSendTransaction, TransactionReceipt}
+import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
 import org.web3j.protocol.http.HttpService
-import org.web3j.utils.Convert
-import org.web3j.utils.Numeric
+import org.web3j.utils.{ Convert, Numeric }
 
 import scala.annotation.tailrec
 import scala.compat.java8.OptionConverters._
@@ -17,15 +16,11 @@ import scala.language.higherKinds
 
 object BlockchainSystem {
 
-  sealed trait BlockchainType {
-    val value: String
-  }
+  case class Data(value: String)
 
   trait BlockchainProcessor[Block[_], D] {
     def process(data: Seq[D]): Either[Option[Response], Throwable]
   }
-
-  case class Data(value: String)
 
   case class EthereumBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumBlockchain, D]) {
     def process = processor.process(data)
@@ -34,10 +29,13 @@ object BlockchainSystem {
   case class EthereumClassicBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumClassicBlockchain, D]) {
     def process = processor.process(data)
   }
-  //
 
   case class IOTABlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[IOTABlockchain, D]) {
     def process = processor.process(data)
+  }
+
+  sealed trait BlockchainType {
+    val value: String
   }
 
   object BlockchainType {
@@ -49,9 +47,11 @@ object BlockchainSystem {
   case object EthereumType extends BlockchainType {
     override val value: String = "ethereum"
   }
+
   case object EthereumClassicType extends BlockchainType {
     override val value: String = "ethereum-classic"
   }
+
   case object IOTAType extends BlockchainType {
     override val value: String = "iota"
   }
@@ -110,7 +110,7 @@ object BlockchainProcessors {
 
     def getReceipt(txHash: String, maxRetries: Int = MAX_RECEIPT_ATTEMPTS): Option[TransactionReceipt] = {
 
-      def receipt = {
+      def receipt: Option[TransactionReceipt] = {
         val getTransactionReceiptRequest = web3.ethGetTransactionReceipt(txHash).send()
         if (getTransactionReceiptRequest.hasError) throw GettingTXReceiptExceptionTXException("Error getting transaction receipt ", Option(getTransactionReceiptRequest.getError))
         getTransactionReceiptRequest.getTransactionReceipt.asScala
@@ -128,7 +128,7 @@ object BlockchainProcessors {
           val maybeReceipt = receipt
 
           if (maybeReceipt.isEmpty) {
-            val sleep = if(sleepInMillis <= 0) DEFAULT_SLEEP_MILLIS else sleepInMillis
+            val sleep = if (sleepInMillis <= 0) DEFAULT_SLEEP_MILLIS else sleepInMillis
             Thread.sleep(sleep)
             go(count - 1, sleep - 1000)
           } else maybeReceipt
@@ -141,7 +141,7 @@ object BlockchainProcessors {
 
     }
 
-    def sendTransaction(hexMessage: String) = {
+    def sendTransaction(hexMessage: String): String = {
       val sendTransactionResponse: EthSendTransaction = web3.ethSendRawTransaction(hexMessage).send()
       if (sendTransactionResponse.hasError) throw SendingTXException("Error sending transaction ", Option(sendTransactionResponse.getError))
       val txHash = sendTransactionResponse.getTransactionHash
@@ -152,7 +152,7 @@ object BlockchainProcessors {
       txHash
     }
 
-    def createTransactionAsHexMessage(message: String, countOrNonce: BigInt) = {
+    def createTransactionAsHexMessage(message: String, countOrNonce: BigInt): String = {
       val rawTransaction = RawTransaction.createTransaction(
         countOrNonce.bigInteger,
         Convert.toWei(gasPrice, Convert.Unit.GWEI).toBigInteger,
@@ -167,13 +167,13 @@ object BlockchainProcessors {
       hexMessage
     }
 
-    def balance(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST) = {
+    def balance(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST): BigInt = {
       val transactionCountResponse = web3.ethGetBalance(address, blockParameterName).send()
       if (transactionCountResponse.hasError) throw GettingBalanceException(s"Error getting balance for address [${address}]", Option(transactionCountResponse.getError))
       transactionCountResponse.getBalance
     }
 
-    def getCount(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST) = {
+    def getCount(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST): BigInt = {
       val transactionCountResponse = web3.ethGetTransactionCount(address, blockParameterName).send()
       if (transactionCountResponse.hasError) throw GettingNonceException("Error getting transaction count(nonce)", Option(transactionCountResponse.getError))
       transactionCountResponse.getTransactionCount

@@ -1,57 +1,57 @@
 package com.ubirch.services
 
-import com.ubirch.kafka.express.ExpressKafkaApp
+import com.ubirch.kafka.express.{ ConfigBase, ExpressKafkaApp }
+import com.ubirch.models.{ BlockchainJsonSupport, Response }
 import org.apache.kafka.common.serialization.{ Deserializer, Serializer, StringDeserializer, StringSerializer }
 
-object BlockchainBucket extends ExpressKafkaApp[String, String, Unit] {
+trait BlockchainProcessorConnector extends ConfigBase {
+  a: ExpressKafkaApp[String, String, Unit] =>
 
-  import com.ubirch.models.BlockchainSystem._
   import com.ubirch.models.BlockchainProcessors._
+  import com.ubirch.models.BlockchainSystem._
 
-  override val keyDeserializer: Deserializer[String] = new StringDeserializer
-
-  override val valueDeserializer: Deserializer[String] = new StringDeserializer
-
-  override def consumerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaConsumer.topics").split(",").toSet.filter(_.nonEmpty)
-
-  def producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topic").split(",").toSet.filter(_.nonEmpty)
-
-  override def consumerBootstrapServers: String = conf.getString("blockchainAnchoring.kafkaConsumer.bootstrapServers")
-
-  override def consumerGroupId: String = conf.getString("blockchainAnchoring.kafkaConsumer.topics")
-
-  override def consumerMaxPollRecords: Int = conf.getInt("blockchainAnchoring.kafkaConsumer.maxPollRecords")
-
-  override def consumerGracefulTimeout: Int = conf.getInt("blockchainAnchoring.kafkaConsumer.gracefulTimeout")
-
-  override def producerBootstrapServers: String = conf.getString("blockchainAnchoring.kafkaProducer.bootstrapServers")
-
-  override val keySerializer: Serializer[String] = new StringSerializer
-
-  override val valueSerializer: Serializer[String] = new StringSerializer
-
-  override def metricsSubNamespace: String = conf.getString("blockchainAnchoring.kafkaConsumer.metricsSubNamespace")
-
-  override def consumerReconnectBackoffMsConfig: Long = conf.getLong("blockchainAnchoring.kafkaConsumer.reconnectBackoffMsConfig")
-
-  override def consumerReconnectBackoffMaxMsConfig: Long = conf.getLong("blockchainAnchoring.kafkaConsumer.reconnectBackoffMaxMsConfig")
-
-  override def lingerMs: Int = conf.getInt("blockchainAnchoring.kafkaProducer.lingerMS")
-
+  lazy val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topic").split(",").toSet.filter(_.nonEmpty)
   val blockchainType: BlockchainType = BlockchainType.fromString(conf.getString("blockchainAnchoring.type")).getOrElse(throw new Exception("No Blockchain type set"))
 
-  override def process: Process = Process { consumerRecords =>
+  logger.info("Configured blockchain={}", blockchainType.value)
 
-    consumerRecords.foreach { x =>
-      blockchainType match {
-        case EthereumType =>
-          val processed = EthereumBlockchain(Seq(Data(x.value()))).process
-          println(processed)
-        case EthereumClassicType => EthereumClassicBlockchain(Seq(Data(x.value()))).process
-        case IOTAType => IOTABlockchain(Seq(Data(x.value()))).process
+  override val process: Process = Process { consumerRecords =>
+
+    consumerRecords.foreach { cr =>
+
+      val response = blockchainType match {
+        case EthereumType => EthereumBlockchain(Seq(Data(cr.value()))).process
+        case EthereumClassicType => EthereumClassicBlockchain(Seq(Data(cr.value()))).process
+        case IOTAType => IOTABlockchain(Seq(Data(cr.value()))).process
       }
+
+      response match {
+        case Left(Some(value)) => producerTopics.map(topic => send(topic, BlockchainJsonSupport.ToJson[Response](value).toString()))
+        case Left(None) =>
+        case Right(exception) => throw exception
+      }
+
     }
 
   }
+
+}
+
+trait BlockchainBucketBase extends ExpressKafkaApp[String, String, Unit] {
+
+  override val keyDeserializer: Deserializer[String] = new StringDeserializer
+  override val valueDeserializer: Deserializer[String] = new StringDeserializer
+  override val consumerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaConsumer.topics").split(",").toSet.filter(_.nonEmpty)
+  override val keySerializer: Serializer[String] = new StringSerializer
+  override val valueSerializer: Serializer[String] = new StringSerializer
+  override val consumerBootstrapServers: String = conf.getString("blockchainAnchoring.kafkaConsumer.bootstrapServers")
+  override val consumerGroupId: String = conf.getString("blockchainAnchoring.kafkaConsumer.topics")
+  override val consumerMaxPollRecords: Int = conf.getInt("blockchainAnchoring.kafkaConsumer.maxPollRecords")
+  override val consumerGracefulTimeout: Int = conf.getInt("blockchainAnchoring.kafkaConsumer.gracefulTimeout")
+  override val producerBootstrapServers: String = conf.getString("blockchainAnchoring.kafkaProducer.bootstrapServers")
+  override val metricsSubNamespace: String = conf.getString("blockchainAnchoring.kafkaConsumer.metricsSubNamespace")
+  override val consumerReconnectBackoffMsConfig: Long = conf.getLong("blockchainAnchoring.kafkaConsumer.reconnectBackoffMsConfig")
+  override val consumerReconnectBackoffMaxMsConfig: Long = conf.getLong("blockchainAnchoring.kafkaConsumer.reconnectBackoffMaxMsConfig")
+  override val lingerMs: Int = conf.getInt("blockchainAnchoring.kafkaProducer.lingerMS")
 
 }

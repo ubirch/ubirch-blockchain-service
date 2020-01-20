@@ -16,12 +16,11 @@ object CustomSerializers {
 
 object BlockchainJsonSupport extends JsonHelper(CustomSerializers.all)
 
-import BlockchainJsonSupport._
+import com.ubirch.models.BlockchainJsonSupport._
 
 object ResponseSerializer {
   val STATUS = "status"
   val TX_ID = "txid"
-  val TXN_HASH_STR = "txn_hash_str"
   val MESSAGE = "message"
   val BLOCKCHAIN = "blockchain"
   val NETWORK_INFO = "network_info"
