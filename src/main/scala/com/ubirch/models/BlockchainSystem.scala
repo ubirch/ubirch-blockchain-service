@@ -1,10 +1,15 @@
 package com.ubirch.models
 
+import java.net.URL
+
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.util.Exceptions._
+import org.iota.jota.model.Transfer
+import org.iota.jota.utils.TrytesConverter
 
 import scala.annotation.tailrec
+import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
 import scala.language.higherKinds
 import scala.util.Try
@@ -187,8 +192,61 @@ object BlockchainProcessors {
 
   }
 
-  implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] {
-    override def process(data: Seq[Data]): Either[Option[Response], Throwable] = Left(None)
+  implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] with ConfigBase {
+
+    import org.iota.jota.IotaAPI
+
+    final val config = Try(conf.getConfig("blockchainAnchoring.iota")).getOrElse(throw NoConfigObjectFound("No object found for this blockchain"))
+    final val urlAsString = config.getString("url")
+    final val address = config.getString("toAddress")
+    final val addressChecksum = config.getString("toAddressChecksum")
+    final val depth = config.getInt("depth")
+    final val seed = config.getString("seed")
+    final val securityLevel = config.getInt("securityLevel")
+    final val minimumWeightMagnitude = config.getInt("minimumWeightMagnitude")
+    final val tag = config.getString("tag")
+    final val createIOTATranferTree = config.getBoolean("createIOTATranferTree")
+    final val networkInfo = config.getString("networkInfo")
+    final val networkType = config.getString("networkType")
+
+    final val url = new URL(urlAsString)
+
+    final val api = new IotaAPI.Builder()
+      .protocol(url.getProtocol)
+      .host(url.getHost)
+      .port(url.getPort)
+      .build()
+
+    override def process(data: Seq[Data]): Either[Option[Response], Throwable] = {
+
+      val messages = if (createIOTATranferTree) data else data.headOption.toList
+
+      val transfers = messages.map { x =>
+        val trytes = TrytesConverter.asciiToTrytes(x.value) // Note: if message > 2187 Trytes, it is sent in several transactions
+        new Transfer(address + addressChecksum, 0, trytes, tag)
+      }
+
+      val response = api.sendTransfer(
+        seed,
+        securityLevel,
+        depth,
+        minimumWeightMagnitude,
+        transfers.asJava,
+        null,
+        null,
+        false,
+        false,
+        null
+      )
+
+      val transactionsAndMessages = response.getTransactions.asScala.toList.zip(messages)
+
+      val responses = transactionsAndMessages.map { case (tx, data) =>
+        Response.Added(tx.getHash, data.value, EthereumType.value, networkInfo, networkType)
+      }
+
+      Left(responses.headOption)
+    }
   }
 
 }
