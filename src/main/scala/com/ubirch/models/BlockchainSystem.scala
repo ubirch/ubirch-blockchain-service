@@ -2,6 +2,7 @@ package com.ubirch.models
 
 import java.net.URL
 
+import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.services.BalanceMonitor
@@ -27,7 +28,7 @@ object BlockchainSystem {
     def process = processor.process(data)
   }
 
-  case class EthereumClassicBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumBlockchain, D]) {
+  case class EthereumClassicBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumClassicBlockchain, D]) {
     def process = processor.process(data)
   }
 
@@ -62,9 +63,8 @@ object BlockchainSystem {
 object BlockchainProcessors {
   import BlockchainSystem._
 
-  implicit object EthereumProcessor
-    extends BlockchainProcessor[EthereumBlockchain, Data]
-    with BalanceMonitor
+  abstract class EthereumBaseProcessor(config: Config, blockchainType: BlockchainType)
+    extends BalanceMonitor
     with WithExecutionContext
     with ConfigBase
     with LazyLogging {
@@ -76,7 +76,6 @@ object BlockchainProcessors {
     import org.web3j.protocol.http.HttpService
     import org.web3j.utils.{ Convert, Numeric }
 
-    final val config = Try(conf.getConfig("blockchainAnchoring.ethereum")).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
     final val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
     final val password = config.getString("password")
     final val address = config.getString("toAddress")
@@ -93,22 +92,20 @@ object BlockchainProcessors {
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
     Balance.start()
 
-    override def queryBalance: BigInt = balance()
-
     def verifyBalance = {
 
       val balance = Balance.currentBalance
       if (balance <= 0) {
-        (false, "Current balance is zero")
+        (false, balance, "Current balance is zero")
       } else if (balance < Convert.toWei(gasPrice, Convert.Unit.GWEI).toBigInteger) {
-        (false, "Current balance is less than the configured gas price")
+        (false, balance, "Current balance is less than the configured gas price")
       } else {
-        (true, "All is good")
+        (true, balance, "All is good")
       }
 
     }
 
-    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = {
+    def process(data: Seq[Data]): Either[Seq[Response], Throwable] = {
 
       if (data.isEmpty) {
         Left(Nil)
@@ -118,7 +115,7 @@ object BlockchainProcessors {
 
         try {
 
-          val (isOK, verificationMessage) = verifyBalance
+          val (isOK, _, verificationMessage) = verifyBalance
 
           if (!isOK) {
             logger.error(verificationMessage)
@@ -131,9 +128,9 @@ object BlockchainProcessors {
             logger.info("Sending transaction={} with count={}", message, count)
             val txHash = sendTransaction(hexMessage)
             val maybeResponse = getReceipt(txHash).map { _ =>
-              Response.Added(txHash, message, EthereumType.value, networkInfo, networkType)
+              Response.Added(txHash, message, blockchainType.value, networkInfo, networkType)
             }.orElse {
-              Option(Response.Timeout(txHash, message, EthereumType.value, networkInfo, networkType))
+              Option(Response.Timeout(txHash, message, blockchainType.value, networkInfo, networkType))
             }
 
             Left(maybeResponse.toList)
@@ -227,6 +224,44 @@ object BlockchainProcessors {
 
   }
 
+  implicit object EthereumProcessor
+    extends BlockchainProcessor[EthereumBlockchain, Data]
+    with Metrics
+    with ConfigBase
+    with LazyLogging {
+
+    final val config = Try(conf.getConfig("blockchainAnchoring." + EthereumType.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
+
+    val processor = new EthereumBaseProcessor(config, EthereumType) {
+
+      override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels("blockchain", EthereumType.value).set(balance.toDouble)
+
+      override def queryBalance: BigInt = balance()
+    }
+
+    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = processor.process(data)
+
+  }
+
+  implicit object EthereumClassicProcessor
+    extends BlockchainProcessor[EthereumClassicBlockchain, Data]
+    with Metrics
+    with ConfigBase
+    with LazyLogging {
+
+    final val config = Try(conf.getConfig("blockchainAnchoring." + EthereumClassicType.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
+
+    val processor = new EthereumBaseProcessor(config, EthereumClassicType) {
+
+      override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels("blockchain", EthereumClassicType.value).set(balance.toDouble)
+
+      override def queryBalance: BigInt = balance()
+    }
+
+    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = processor.process(data)
+
+  }
+
   implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] with ConfigBase {
 
     import org.iota.jota.IotaAPI
@@ -281,7 +316,7 @@ object BlockchainProcessors {
         val transactionsAndMessages = response.getTransactions.asScala.toList.zip(messages)
 
         val responses = transactionsAndMessages.map { case (tx, data) =>
-          Response.Added(tx.getHash, data.value, EthereumType.value, networkInfo, networkType)
+          Response.Added(tx.getHash, data.value, IOTAType.value, networkInfo, networkType)
         }
 
         Left(responses)

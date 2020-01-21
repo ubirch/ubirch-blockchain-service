@@ -21,6 +21,7 @@ trait BalanceMonitor extends LazyLogging {
 
     private def action = {
       val newBalance = queryBalance
+      registerNewBalance(newBalance)
       logger.info("local_balance={} incoming_balance={}", balance.get(), newBalance)
       balance.set(newBalance)
     }
@@ -30,6 +31,8 @@ trait BalanceMonitor extends LazyLogging {
     def currentBalance: BigInt = balance.get()
 
   }
+
+  def registerNewBalance(balance: BigInt): Unit
 
   def queryBalance: BigInt
 
