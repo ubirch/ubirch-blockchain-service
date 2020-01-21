@@ -11,22 +11,19 @@ trait BucketPicker extends ConfigBase {
   import com.ubirch.models.BlockchainProcessors._
   import com.ubirch.models.BlockchainSystem._
 
-  lazy val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topic").split(",").toSet.filter(_.nonEmpty)
-  lazy val blockchainType: BlockchainType = BlockchainType.fromString(conf.getString("blockchainAnchoring.type")).getOrElse(throw new Exception("No Blockchain type set"))
+  val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topic").split(",").toSet.filter(_.nonEmpty)
+  final val blockchainType: BlockchainType = BlockchainType.fromString(conf.getString("blockchainAnchoring.type")).getOrElse(throw new Exception("No Blockchain type set"))
 
   logger.info("Configured blockchain={}", blockchainType.value)
+
+  //We have this dummy call in order to boost things up, like getting the current balance.
+  sendData(Nil)
 
   override val process: Process = Process { consumerRecords =>
 
     consumerRecords.foreach { cr =>
 
-      val response = blockchainType match {
-        case EthereumType => EthereumBlockchain(Seq(Data(cr.value()))).process
-        case EthereumClassicType => EthereumClassicBlockchain(Seq(Data(cr.value()))).process
-        case IOTAType => IOTABlockchain(Seq(Data(cr.value()))).process
-      }
-
-      response match {
+      sendData(Seq(Data(cr.value()))) match {
         case Left(List(value)) => producerTopics.map(topic => send(topic, JsonSupport.ToJson[Response](value).toString()))
         case Left(Nil) =>
         //No need to react to this response as this type of response is intended to be a not critical blockchain exception/error, with is
@@ -37,6 +34,13 @@ trait BucketPicker extends ConfigBase {
     }
 
   }
+
+  def sendData(data: Seq[Data]) =
+    blockchainType match {
+      case EthereumType => EthereumBlockchain(data).process
+      case EthereumClassicType => EthereumClassicBlockchain(data).process
+      case IOTAType => IOTABlockchain(data).process
+    }
 
 }
 

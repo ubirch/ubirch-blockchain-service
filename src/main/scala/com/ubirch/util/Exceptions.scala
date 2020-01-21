@@ -8,7 +8,8 @@ object Exceptions {
     val name: String = this.getClass.getCanonicalName
   }
 
-  case class NoConfigObjectFound(override val message: String) extends BlockchainException(message)
+  case class NoConfigObjectFoundException(override val message: String) extends BlockchainException(message)
+  case class NoBalanceException(override val message: String) extends BlockchainException(message)
 
   abstract class EthereumBlockchainException(message: String, val error: Option[Error], val isCritical: Boolean) extends BlockchainException(message)
 

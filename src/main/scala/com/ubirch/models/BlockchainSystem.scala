@@ -4,6 +4,7 @@ import java.net.URL
 
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
+import com.ubirch.services.BalanceMonitor
 import com.ubirch.util.Exceptions._
 import org.iota.jota.model.Transfer
 import org.iota.jota.utils.TrytesConverter
@@ -22,7 +23,7 @@ object BlockchainSystem {
     def process(data: Seq[D]): Either[Seq[Response], Throwable]
   }
 
-  case class EthereumBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumBlockchain, D]) {
+  case class EthereumBlockchain[D](data: Seq[D])(implicit val processor: BlockchainProcessor[EthereumBlockchain, D]) {
     def process = processor.process(data)
   }
 
@@ -61,7 +62,12 @@ object BlockchainSystem {
 object BlockchainProcessors {
   import BlockchainSystem._
 
-  implicit object EthereumProcessor extends BlockchainProcessor[EthereumBlockchain, Data] with ConfigBase with LazyLogging {
+  implicit object EthereumProcessor
+    extends BlockchainProcessor[EthereumBlockchain, Data]
+    with BalanceMonitor
+    with WithExecutionContext
+    with ConfigBase
+    with LazyLogging {
 
     import org.web3j.crypto.{ RawTransaction, TransactionEncoder, WalletUtils }
     import org.web3j.protocol.Web3j
@@ -70,7 +76,7 @@ object BlockchainProcessors {
     import org.web3j.protocol.http.HttpService
     import org.web3j.utils.{ Convert, Numeric }
 
-    final val config = Try(conf.getConfig("blockchainAnchoring.ethereum")).getOrElse(throw NoConfigObjectFound("No object found for this blockchain"))
+    final val config = Try(conf.getConfig("blockchainAnchoring.ethereum")).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
     final val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
     final val password = config.getString("password")
     final val address = config.getString("toAddress")
@@ -85,36 +91,65 @@ object BlockchainProcessors {
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
+    Balance.start()
+
+    override def queryBalance: BigInt = balance()
+
+    def verifyBalance = {
+
+      val balance = Balance.currentBalance
+      if (balance <= 0) {
+        (false, "Current balance is zero")
+      } else if (balance < Convert.toWei(gasPrice, Convert.Unit.GWEI).toBigInteger) {
+        (false, "Current balance is less than the configured gas price")
+      } else {
+        (true, "All is good")
+      }
+
+    }
 
     override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = {
 
-      val message = data.headOption.map(_.value).getOrElse("")
+      if (data.isEmpty) {
+        Left(Nil)
+      } else {
 
-      try {
+        val message = data.headOption.map(_.value).getOrElse("")
 
-        val count = getCount()
-        val hexMessage = createTransactionAsHexMessage(message, count)
+        try {
 
-        logger.info("Sending transaction={} with count={}", message, count)
-        val txHash = sendTransaction(hexMessage)
-        val maybeResponse = getReceipt(txHash).map { _ =>
-          Response.Added(txHash, message, EthereumType.value, networkInfo, networkType)
-        }.orElse {
-          Option(Response.Timeout(txHash, message, EthereumType.value, networkInfo, networkType))
+          val (isOK, verificationMessage) = verifyBalance
+
+          if (!isOK) {
+            logger.error(verificationMessage)
+            Left(Nil)
+          } else {
+
+            val count = getCount()
+            val hexMessage = createTransactionAsHexMessage(message, count)
+
+            logger.info("Sending transaction={} with count={}", message, count)
+            val txHash = sendTransaction(hexMessage)
+            val maybeResponse = getReceipt(txHash).map { _ =>
+              Response.Added(txHash, message, EthereumType.value, networkInfo, networkType)
+            }.orElse {
+              Option(Response.Timeout(txHash, message, EthereumType.value, networkInfo, networkType))
+            }
+
+            Left(maybeResponse.toList)
+          }
+
+        } catch {
+          case e: EthereumBlockchainException if !e.isCritical =>
+            val errorMessage = e.error.map(_.getMessage).getOrElse("No Message")
+            val errorCode = e.error.map(_.getCode).getOrElse("No Error Code")
+            val errorData = e.error.map(_.getData).getOrElse("No Data")
+            logger.error("status=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
+            Left(Nil)
+          case e: Exception =>
+            logger.error("Something critical happened: ", e)
+            Right(e)
         }
-
-        Left(maybeResponse.toList)
-
-      } catch {
-        case e: EthereumBlockchainException if !e.isCritical =>
-          val errorMessage = e.error.map(_.getMessage).getOrElse("No Message")
-          val errorCode = e.error.map(_.getCode).getOrElse("No Error Code")
-          val errorData = e.error.map(_.getData).getOrElse("No Data")
-          logger.error("status=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
-          Left(Nil)
-        case e: Exception =>
-          logger.error("Something critical happened: ", e)
-          Right(e)
       }
 
     }
@@ -196,7 +231,7 @@ object BlockchainProcessors {
 
     import org.iota.jota.IotaAPI
 
-    final val config = Try(conf.getConfig("blockchainAnchoring.iota")).getOrElse(throw NoConfigObjectFound("No object found for this blockchain"))
+    final val config = Try(conf.getConfig("blockchainAnchoring.iota")).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
     final val urlAsString = config.getString("url")
     final val address = config.getString("toAddress")
     final val addressChecksum = config.getString("toAddressChecksum")
@@ -219,36 +254,41 @@ object BlockchainProcessors {
 
     override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = {
 
-      val messages = if (createIOTATransferTree) data else data.headOption.toList
+      if (data.isEmpty) {
+        Left(Nil)
+      } else {
 
-      val transfers = messages.map { x =>
-        val trytes = TrytesConverter.asciiToTrytes(x.value) // Note: if message > 2187 Trytes, it is sent in several transactions
-        new Transfer(completeAddress, 0, trytes, tag)
+        val messages = if (createIOTATransferTree) data else data.headOption.toList
+
+        val transfers = messages.map { x =>
+          val trytes = TrytesConverter.asciiToTrytes(x.value) // Note: if message > 2187 Trytes, it is sent in several transactions
+          new Transfer(completeAddress, 0, trytes, tag)
+        }
+
+        val response = api.sendTransfer(
+          seed,
+          securityLevel,
+          depth,
+          minimumWeightMagnitude,
+          transfers.asJava,
+          null,
+          null,
+          false,
+          false,
+          null
+        )
+
+        val transactionsAndMessages = response.getTransactions.asScala.toList.zip(messages)
+
+        val responses = transactionsAndMessages.map { case (tx, data) =>
+          Response.Added(tx.getHash, data.value, EthereumType.value, networkInfo, networkType)
+        }
+
+        Left(responses)
       }
-
-      val response = api.sendTransfer(
-        seed,
-        securityLevel,
-        depth,
-        minimumWeightMagnitude,
-        transfers.asJava,
-        null,
-        null,
-        false,
-        false,
-        null
-      )
-
-      val transactionsAndMessages = response.getTransactions.asScala.toList.zip(messages)
-
-      val responses = transactionsAndMessages.map { case (tx, data) =>
-        Response.Added(tx.getHash, data.value, EthereumType.value, networkInfo, networkType)
-      }
-
-      Left(responses)
     }
 
-    def getBalance(threshold: Int, address: String) = api.getBalance(threshold, completeAddress)
+    def balance(threshold: Int = 100 /*based on confirmed transactions*/ ) = api.getBalance(threshold, completeAddress)
 
   }
 
