@@ -1,10 +1,11 @@
 package com.ubirch.services
 
 import com.ubirch.kafka.express.{ ConfigBase, ExpressKafkaApp }
-import com.ubirch.models.{ BlockchainJsonSupport, Response }
+import com.ubirch.models.Response
+import com.ubirch.util.JsonSupport
 import org.apache.kafka.common.serialization.{ Deserializer, Serializer, StringDeserializer, StringSerializer }
 
-trait BlockchainProcessorConnector extends ConfigBase {
+trait BucketPicker extends ConfigBase {
   a: ExpressKafkaApp[String, String, Unit] =>
 
   import com.ubirch.models.BlockchainProcessors._
@@ -26,7 +27,7 @@ trait BlockchainProcessorConnector extends ConfigBase {
       }
 
       response match {
-        case Left(List(value)) => producerTopics.map(topic => send(topic, BlockchainJsonSupport.ToJson[Response](value).toString()))
+        case Left(List(value)) => producerTopics.map(topic => send(topic, JsonSupport.ToJson[Response](value).toString()))
         case Left(Nil) =>
         //No need to react to this response as this type of response is intended to be a not critical blockchain exception/error, with is
         //totally OK to just let go and continue with other values.
@@ -39,7 +40,7 @@ trait BlockchainProcessorConnector extends ConfigBase {
 
 }
 
-trait BlockchainBucketBase extends ExpressKafkaApp[String, String, Unit] {
+trait Bucket extends ExpressKafkaApp[String, String, Unit] {
 
   override val keyDeserializer: Deserializer[String] = new StringDeserializer
   override val valueDeserializer: Deserializer[String] = new StringDeserializer

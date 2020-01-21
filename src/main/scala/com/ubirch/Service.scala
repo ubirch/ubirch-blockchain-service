@@ -1,5 +1,8 @@
 package com.ubirch
 
-import com.ubirch.services.{ BlockchainBucketBase, BlockchainProcessorConnector }
+import com.ubirch.services.{ Bucket, BucketPicker, Prometheus }
 
-object Service extends BlockchainBucketBase with BlockchainProcessorConnector
+object Service
+  extends Bucket
+  with BucketPicker
+  with Prometheus

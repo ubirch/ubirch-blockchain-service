@@ -83,7 +83,7 @@ object BlockchainProcessors {
     final val DEFAULT_SLEEP_MILLIS = config.getInt("defaultSleepMillisForReceipt")
     final val MAX_RECEIPT_ATTEMPTS = config.getInt("maxReceiptAttempts")
 
-    final val web3 = Web3j.build(new HttpService(url))
+    final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
 
     override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = {
@@ -122,7 +122,7 @@ object BlockchainProcessors {
     def getReceipt(txHash: String, maxRetries: Int = MAX_RECEIPT_ATTEMPTS): Option[TransactionReceipt] = {
 
       def receipt: Option[TransactionReceipt] = {
-        val getTransactionReceiptRequest = web3.ethGetTransactionReceipt(txHash).send()
+        val getTransactionReceiptRequest = api.ethGetTransactionReceipt(txHash).send()
         if (getTransactionReceiptRequest.hasError) throw GettingTXReceiptExceptionTXException("Error getting transaction receipt ", Option(getTransactionReceiptRequest.getError))
         getTransactionReceiptRequest.getTransactionReceipt.asScala
       }
@@ -153,7 +153,7 @@ object BlockchainProcessors {
     }
 
     def sendTransaction(hexMessage: String): String = {
-      val sendTransactionResponse: EthSendTransaction = web3.ethSendRawTransaction(hexMessage).send()
+      val sendTransactionResponse: EthSendTransaction = api.ethSendRawTransaction(hexMessage).send()
       if (sendTransactionResponse.hasError) throw SendingTXException("Error sending transaction ", Option(sendTransactionResponse.getError))
       val txHash = sendTransactionResponse.getTransactionHash
       if (txHash == null || txHash.isEmpty) {
@@ -179,13 +179,13 @@ object BlockchainProcessors {
     }
 
     def balance(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST): BigInt = {
-      val transactionCountResponse = web3.ethGetBalance(address, blockParameterName).send()
+      val transactionCountResponse = api.ethGetBalance(address, blockParameterName).send()
       if (transactionCountResponse.hasError) throw GettingBalanceException(s"Error getting balance for address [${address}]", Option(transactionCountResponse.getError))
       transactionCountResponse.getBalance
     }
 
     def getCount(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST): BigInt = {
-      val transactionCountResponse = web3.ethGetTransactionCount(address, blockParameterName).send()
+      val transactionCountResponse = api.ethGetTransactionCount(address, blockParameterName).send()
       if (transactionCountResponse.hasError) throw GettingNonceException("Error getting transaction count(nonce)", Option(transactionCountResponse.getError))
       transactionCountResponse.getTransactionCount
     }
@@ -200,17 +200,17 @@ object BlockchainProcessors {
     final val urlAsString = config.getString("url")
     final val address = config.getString("toAddress")
     final val addressChecksum = config.getString("toAddressChecksum")
+    final val completeAddress = address + addressChecksum
     final val depth = config.getInt("depth")
     final val seed = config.getString("seed")
     final val securityLevel = config.getInt("securityLevel")
     final val minimumWeightMagnitude = config.getInt("minimumWeightMagnitude")
     final val tag = config.getString("tag")
-    final val createIOTATranferTree = config.getBoolean("createIOTATranferTree")
+    final val createIOTATransferTree = config.getBoolean("createIOTATransferTree")
     final val networkInfo = config.getString("networkInfo")
     final val networkType = config.getString("networkType")
 
     final val url = new URL(urlAsString)
-
     final val api = new IotaAPI.Builder()
       .protocol(url.getProtocol)
       .host(url.getHost)
@@ -219,11 +219,11 @@ object BlockchainProcessors {
 
     override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = {
 
-      val messages = if (createIOTATranferTree) data else data.headOption.toList
+      val messages = if (createIOTATransferTree) data else data.headOption.toList
 
       val transfers = messages.map { x =>
         val trytes = TrytesConverter.asciiToTrytes(x.value) // Note: if message > 2187 Trytes, it is sent in several transactions
-        new Transfer(address + addressChecksum, 0, trytes, tag)
+        new Transfer(completeAddress, 0, trytes, tag)
       }
 
       val response = api.sendTransfer(
@@ -247,6 +247,9 @@ object BlockchainProcessors {
 
       Left(responses)
     }
+
+    def getBalance(threshold: Int, address: String) = api.getBalance(threshold, completeAddress)
+
   }
 
 }
