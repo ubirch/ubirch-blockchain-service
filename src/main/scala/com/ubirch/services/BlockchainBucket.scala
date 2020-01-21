@@ -26,8 +26,8 @@ trait BlockchainProcessorConnector extends ConfigBase {
       }
 
       response match {
-        case Left(Some(value)) => producerTopics.map(topic => send(topic, BlockchainJsonSupport.ToJson[Response](value).toString()))
-        case Left(None) =>
+        case Left(List(value)) => producerTopics.map(topic => send(topic, BlockchainJsonSupport.ToJson[Response](value).toString()))
+        case Left(Nil) =>
         //No need to react to this response as this type of response is intended to be a not critical blockchain exception/error, with is
         //totally OK to just let go and continue with other values.
         case Right(exception) => throw exception

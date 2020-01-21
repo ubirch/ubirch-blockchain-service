@@ -19,7 +19,7 @@ object BlockchainSystem {
   case class Data(value: String)
 
   trait BlockchainProcessor[Block[_], D] {
-    def process(data: Seq[D]): Either[Option[Response], Throwable]
+    def process(data: Seq[D]): Either[Seq[Response], Throwable]
   }
 
   case class EthereumBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumBlockchain, D]) {
@@ -86,7 +86,7 @@ object BlockchainProcessors {
     final val web3 = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
 
-    override def process(data: Seq[Data]): Either[Option[Response], Throwable] = {
+    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = {
 
       val message = data.headOption.map(_.value).getOrElse("")
 
@@ -103,7 +103,7 @@ object BlockchainProcessors {
           Option(Response.Timeout(txHash, message, EthereumType.value, networkInfo, networkType))
         }
 
-        Left(maybeResponse)
+        Left(maybeResponse.toList)
 
       } catch {
         case e: EthereumBlockchainException if !e.isCritical =>
@@ -111,7 +111,7 @@ object BlockchainProcessors {
           val errorCode = e.error.map(_.getCode).getOrElse("No Error Code")
           val errorData = e.error.map(_.getData).getOrElse("No Data")
           logger.error("status=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
-          Left(None)
+          Left(Nil)
         case e: Exception =>
           logger.error("Something critical happened: ", e)
           Right(e)
@@ -217,7 +217,7 @@ object BlockchainProcessors {
       .port(url.getPort)
       .build()
 
-    override def process(data: Seq[Data]): Either[Option[Response], Throwable] = {
+    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = {
 
       val messages = if (createIOTATranferTree) data else data.headOption.toList
 
@@ -245,7 +245,7 @@ object BlockchainProcessors {
         Response.Added(tx.getHash, data.value, EthereumType.value, networkInfo, networkType)
       }
 
-      Left(responses.headOption)
+      Left(responses)
     }
   }
 
