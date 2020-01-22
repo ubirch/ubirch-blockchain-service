@@ -5,6 +5,7 @@ import java.net.URL
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
+import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.services.BalanceMonitor
 import com.ubirch.util.Exceptions._
 import com.ubirch.util.RunTimeHook
@@ -109,48 +110,46 @@ object BlockchainProcessors {
 
     }
 
-    def process(data: Seq[Data]): Either[Seq[Response], Throwable] = {
+    def process(data: Data): Either[Seq[Response], Throwable] = {
 
-      if (data.isEmpty) {
-        Left(Nil)
-      } else {
+      val message = data.value
 
-        val message = data.headOption.map(_.value).getOrElse("")
+      try {
 
-        try {
+        val (isOK, _, verificationMessage) = verifyBalance
 
-          val (isOK, _, verificationMessage) = verifyBalance
+        if (!isOK) {
+          logger.error(verificationMessage)
+          Left(Nil)
+        } else {
 
-          if (!isOK) {
-            logger.error(verificationMessage)
-            Left(Nil)
-          } else {
+          val count = getCount()
+          val hexMessage = createTransactionAsHexMessage(message, count)
 
-            val count = getCount()
-            val hexMessage = createTransactionAsHexMessage(message, count)
-
-            logger.info("Sending transaction={} with count={}", message, count)
-            val txHash = sendTransaction(hexMessage)
-            val maybeResponse = getReceipt(txHash).map { _ =>
-              Response.Added(txHash, message, blockchainType.value, networkInfo, networkType)
-            }.orElse {
-              Option(Response.Timeout(txHash, message, blockchainType.value, networkInfo, networkType))
-            }
-
-            Left(maybeResponse.toList)
+          logger.info("Sending transaction={} with count={}", message, count)
+          val txHash = sendTransaction(hexMessage)
+          val maybeResponse = getReceipt(txHash).map { _ =>
+            Response.Added(txHash, message, blockchainType.value, networkInfo, networkType)
+          }.orElse {
+            Option(Response.Timeout(txHash, message, blockchainType.value, networkInfo, networkType))
           }
 
-        } catch {
-          case e: EthereumBlockchainException if !e.isCritical =>
-            val errorMessage = e.error.map(_.getMessage).getOrElse("No Message")
-            val errorCode = e.error.map(_.getCode).getOrElse("No Error Code")
-            val errorData = e.error.map(_.getData).getOrElse("No Data")
-            logger.error("status=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
-            Left(Nil)
-          case e: Exception =>
-            logger.error("Something critical happened: ", e)
-            Right(e)
+          Left(maybeResponse.toList)
         }
+
+      } catch {
+        case e: EthereumBlockchainException if !e.isCritical =>
+          val errorMessage = e.error.map(_.getMessage).getOrElse("No Message")
+          val errorCode = e.error.map(_.getCode).getOrElse(-99)
+          val errorData = e.error.map(_.getData).getOrElse("No Data")
+          logger.error("status=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
+          if (errorCode == -32010 && errorMessage.contains("another transaction with same nonce"))
+            Right(NeedForPauseException("Possible transaction running", "Transaction gas price supplied is too low. There is another transaction with same nonce in the queue"))
+          else
+            Left(Nil)
+        case e: Exception =>
+          logger.error("Something critical happened: ", e)
+          Right(e)
       }
 
     }
@@ -170,11 +169,10 @@ object BlockchainProcessors {
           None
         else {
 
-          logger.info("receipt_attempt={} sleepInMillis={} ...", count, sleepInMillis)
-
           val maybeReceipt = receipt
 
           if (maybeReceipt.isEmpty) {
+            logger.info("receipt_attempt={} sleepInMillis={} ...", count, sleepInMillis)
             val sleep = if (sleepInMillis <= 0) DEFAULT_SLEEP_MILLIS else sleepInMillis
             Thread.sleep(sleep)
             go(count - 1, sleep - 1000)
@@ -236,7 +234,7 @@ object BlockchainProcessors {
 
   implicit object EthereumProcessor
     extends BlockchainProcessor[EthereumBlockchain, Data]
-    with Metrics
+    with BalanceGaugeMetric
     with ConfigBase
     with LazyLogging {
 
@@ -249,13 +247,18 @@ object BlockchainProcessors {
       override def queryBalance: BigInt = balance()
     }
 
-    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = processor.process(data)
+    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] =
+      data.toList match {
+        case List(d) => processor.process(d)
+        case Nil => Left(Nil)
+        case _ => Right(new Exception("Please configure for this blockchain a poll size of 1"))
+      }
 
   }
 
   implicit object EthereumClassicProcessor
     extends BlockchainProcessor[EthereumClassicBlockchain, Data]
-    with Metrics
+    with BalanceGaugeMetric
     with ConfigBase
     with LazyLogging {
 
@@ -268,11 +271,16 @@ object BlockchainProcessors {
       override def queryBalance: BigInt = balance()
     }
 
-    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = processor.process(data)
+    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] =
+      data.toList match {
+        case List(d) => processor.process(d)
+        case Nil => Left(Nil)
+        case _ => Right(new Exception("Please configure for this blockchain a poll size of 1"))
+      }
 
   }
 
-  implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] with ConfigBase {
+  implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] with ConfigBase with LazyLogging {
 
     import org.iota.jota.IotaAPI
 
@@ -286,7 +294,6 @@ object BlockchainProcessors {
     final val securityLevel = config.getInt("securityLevel")
     final val minimumWeightMagnitude = config.getInt("minimumWeightMagnitude")
     final val tag = config.getString("tag")
-    final val createIOTATransferTree = config.getBoolean("createIOTATransferTree")
     final val networkInfo = config.getString("networkInfo")
     final val networkType = config.getString("networkType")
 
@@ -303,33 +310,47 @@ object BlockchainProcessors {
         Left(Nil)
       } else {
 
-        val messages = if (createIOTATransferTree) data else data.headOption.toList
+        logger.info("transfer_data={}", data.mkString(", "))
 
-        val transfers = messages.map { x =>
-          val trytes = TrytesConverter.asciiToTrytes(x.value) // Note: if message > 2187 Trytes, it is sent in several transactions
-          new Transfer(completeAddress, 0, trytes, tag)
+        try {
+
+          val transfers = data.map { x =>
+            val trytes = TrytesConverter.asciiToTrytes(x.value) // Note: if message > 2187 Trytes, it is sent in several transactions
+            new Transfer(completeAddress, 0, trytes, tag)
+          }
+
+          val response = api.sendTransfer(
+            seed,
+            securityLevel,
+            depth,
+            minimumWeightMagnitude,
+            transfers.asJava,
+            null,
+            null,
+            false,
+            false,
+            null
+          )
+
+          val transactionsAndMessages = response.getTransactions.asScala.toList.zip(data)
+
+          val responses = transactionsAndMessages.map { case (tx, data) =>
+            Response.Added(tx.getHash, data.value, IOTAType.value, networkInfo, networkType)
+          }
+
+          Left(responses)
+        } catch {
+          case e: org.iota.jota.error.ConnectorException =>
+            logger.error("status=KO message={} error={} code={} exceptionName={}", data.map(_.value).mkString(", "), e.getMessage, e.getErrorCode, e.getClass.getCanonicalName)
+            Right(NeedForPauseException("Jota ConnectorException", e.getMessage))
+          case e: org.iota.jota.error.InternalException =>
+            logger.error("status=KO message={} error={} exceptionName={}", data.map(_.value).mkString(", "), e.getMessage, e.getClass.getCanonicalName)
+            Right(NeedForPauseException("Jota InternalException", e.getMessage))
+          case e: Exception =>
+            logger.error("Something critical happened: ", e)
+            Right(e)
+
         }
-
-        val response = api.sendTransfer(
-          seed,
-          securityLevel,
-          depth,
-          minimumWeightMagnitude,
-          transfers.asJava,
-          null,
-          null,
-          false,
-          false,
-          null
-        )
-
-        val transactionsAndMessages = response.getTransactions.asScala.toList.zip(messages)
-
-        val responses = transactionsAndMessages.map { case (tx, data) =>
-          Response.Added(tx.getHash, data.value, IOTAType.value, networkInfo, networkType)
-        }
-
-        Left(responses)
       }
     }
 

@@ -38,7 +38,7 @@
         <dependency>
             <groupId>com.ubirch</groupId>
             <artifactId>event-log-kafka</artifactId>
-            <version>1.2.8-SNAPSHOT</version>
+            <version>1.2.9-SNAPSHOT</version>
         </dependency>
 
         <dependency>
@@ -204,7 +204,7 @@
                         <manifest>
                             <addClasspath>true</addClasspath>
                             <classpathPrefix>lib/</classpathPrefix>
-                            <mainClass>com.ubirch.kafka.empty.UpperCase</mainClass>
+                            <mainClass>com.ubirch.Service</mainClass>
                             <useUniqueVersions>false</useUniqueVersions>
                         </manifest>
                     </archive>

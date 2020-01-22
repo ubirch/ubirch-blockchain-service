@@ -14,7 +14,6 @@ object Exceptions {
   abstract class EthereumBlockchainException(message: String, val error: Option[Error], val isCritical: Boolean) extends BlockchainException(message)
 
   case class BuildingW3ConnectionException(override val message: String) extends EthereumBlockchainException(message, None, isCritical = true)
-
   case class GettingNonceException(override val message: String, override val error: Option[Error]) extends EthereumBlockchainException(message, error, isCritical = false)
   case class GettingBalanceException(override val message: String, override val error: Option[Error]) extends EthereumBlockchainException(message, error, isCritical = false)
   case class SendingTXException(override val message: String, override val error: Option[Error]) extends EthereumBlockchainException(message, error, isCritical = false)

@@ -2,11 +2,10 @@ package com.ubirch.models
 
 import io.prometheus.client.Gauge
 
-trait Metrics {
+trait BalanceGaugeMetric {
 
   val balanceGauge = Gauge.build()
-    .namespace("blockchain_anchoring")
-    .name("balance")
+    .name("current_balance")
     .help("Shows the current balance for the blockchain anchoring system")
     .labelNames("service")
     .register()
