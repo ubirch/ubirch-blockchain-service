@@ -7,6 +7,7 @@ import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.services.BalanceMonitor
 import com.ubirch.util.Exceptions._
+import com.ubirch.util.RunTimeHook
 import org.iota.jota.model.Transfer
 import org.iota.jota.utils.TrytesConverter
 
@@ -65,6 +66,7 @@ object BlockchainProcessors {
 
   abstract class EthereumBaseProcessor(config: Config, blockchainType: BlockchainType)
     extends BalanceMonitor
+    with RunTimeHook
     with WithExecutionContext
     with ConfigBase
     with LazyLogging {
@@ -90,9 +92,9 @@ object BlockchainProcessors {
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
-    Balance.start()
+    final val balanceCancelable = Balance.start()
 
-    def verifyBalance = {
+    def verifyBalance: (Boolean, BigInt, String) = {
 
       val balance = Balance.currentBalance
       if (balance <= 0) {
@@ -212,7 +214,7 @@ object BlockchainProcessors {
 
     def balance(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST): BigInt = {
       val transactionCountResponse = api.ethGetBalance(address, blockParameterName).send()
-      if (transactionCountResponse.hasError) throw GettingBalanceException(s"Error getting balance for address [${address}]", Option(transactionCountResponse.getError))
+      if (transactionCountResponse.hasError) throw GettingBalanceException(s"Error getting balance for address [$address]", Option(transactionCountResponse.getError))
       transactionCountResponse.getBalance
     }
 
@@ -220,6 +222,12 @@ object BlockchainProcessors {
       val transactionCountResponse = api.ethGetTransactionCount(address, blockParameterName).send()
       if (transactionCountResponse.hasError) throw GettingNonceException("Error getting transaction count(nonce)", Option(transactionCountResponse.getError))
       transactionCountResponse.getTransactionCount
+    }
+
+    override def shutdownHook(): Unit = {
+      logger.info("Shutting down blockchain_processor_system={} and balance monitor", blockchainType.value)
+      balanceCancelable.cancel()
+      api.shutdown()
     }
 
   }

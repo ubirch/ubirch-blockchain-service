@@ -19,14 +19,14 @@ trait BalanceMonitor extends LazyLogging {
 
     private val balance = new AtomicReference[BigInt](-1)
 
-    private def action = {
+    private def action(): Unit = {
       val newBalance = queryBalance
       registerNewBalance(newBalance)
       logger.info("local_balance={} incoming_balance={}", balance.get(), newBalance)
       balance.set(newBalance)
     }
 
-    def start(): Cancelable = scheduler.scheduleWithFixedDelay(0 second, 30 seconds)(action)
+    def start(): Cancelable = scheduler.scheduleWithFixedDelay(0 second, 30 seconds)(action())
 
     def currentBalance: BigInt = balance.get()
 

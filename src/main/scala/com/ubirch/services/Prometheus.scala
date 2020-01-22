@@ -3,9 +3,10 @@ package com.ubirch.services
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.metrics.PrometheusMetricsHelper
+import com.ubirch.util.RunTimeHook
 import io.prometheus.client.exporter.HTTPServer
 
-trait Prometheus extends LazyLogging {
+trait Prometheus extends RunTimeHook with LazyLogging {
 
   trait PrometheusMetrics extends ConfigBase {
 
@@ -17,14 +18,12 @@ trait Prometheus extends LazyLogging {
 
   }
 
-  val prometheusServer = new PrometheusMetrics {}
+  val prometheusServer: PrometheusMetrics = new PrometheusMetrics {}
 
-  Runtime.getRuntime.addShutdownHook(new Thread() {
-    override def run(): Unit = {
-      logger.info("Shutting down Prometheus")
-      prometheusServer.server.stop()
-    }
-  })
+  override def shutdownHook(): Unit = {
+    logger.info("Shutting down Prometheus")
+    prometheusServer.server.stop()
+  }
 
 }
 
