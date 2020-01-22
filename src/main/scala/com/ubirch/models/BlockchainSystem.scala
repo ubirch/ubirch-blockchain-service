@@ -14,7 +14,8 @@ import org.iota.jota.utils.TrytesConverter
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
-import scala.language.higherKinds
+import scala.concurrent.duration._
+import scala.language.{ higherKinds, postfixOps }
 import scala.util.Try
 
 object BlockchainSystem {
@@ -89,10 +90,11 @@ object BlockchainProcessors {
     final val url = config.getString("url")
     final val DEFAULT_SLEEP_MILLIS = config.getInt("defaultSleepMillisForReceipt")
     final val MAX_RECEIPT_ATTEMPTS = config.getInt("maxReceiptAttempts")
+    final val checkBalanceEveryInSeconds = config.getInt("checkBalanceEveryInSeconds")
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
-    final val balanceCancelable = Balance.start()
+    final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
     def verifyBalance: (Boolean, BigInt, String) = {
 
@@ -242,7 +244,7 @@ object BlockchainProcessors {
 
     val processor = new EthereumBaseProcessor(config, EthereumType) {
 
-      override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels("blockchain", EthereumType.value).set(balance.toDouble)
+      override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels(EthereumType.value).set(balance.toDouble)
 
       override def queryBalance: BigInt = balance()
     }
@@ -261,7 +263,7 @@ object BlockchainProcessors {
 
     val processor = new EthereumBaseProcessor(config, EthereumClassicType) {
 
-      override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels("blockchain", EthereumClassicType.value).set(balance.toDouble)
+      override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels(EthereumClassicType.value).set(balance.toDouble)
 
       override def queryBalance: BigInt = balance()
     }

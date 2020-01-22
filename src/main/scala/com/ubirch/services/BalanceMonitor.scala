@@ -26,7 +26,8 @@ trait BalanceMonitor extends LazyLogging {
       balance.set(newBalance)
     }
 
-    def start(): Cancelable = scheduler.scheduleWithFixedDelay(0 second, 30 seconds)(action())
+    def start(every: FiniteDuration = 30 seconds): Cancelable =
+      scheduler.scheduleWithFixedDelay(0 seconds, every)(action())
 
     def currentBalance: BigInt = balance.get()
 

@@ -52,7 +52,7 @@ trait Bucket extends ExpressKafkaApp[String, String, Unit] {
   override val keySerializer: Serializer[String] = new StringSerializer
   override val valueSerializer: Serializer[String] = new StringSerializer
   override val consumerBootstrapServers: String = conf.getString("blockchainAnchoring.kafkaConsumer.bootstrapServers")
-  override val consumerGroupId: String = conf.getString("blockchainAnchoring.kafkaConsumer.topics")
+  override val consumerGroupId: String = conf.getString("blockchainAnchoring.kafkaConsumer.groupId")
   override val consumerMaxPollRecords: Int = conf.getInt("blockchainAnchoring.kafkaConsumer.maxPollRecords")
   override val consumerGracefulTimeout: Int = conf.getInt("blockchainAnchoring.kafkaConsumer.gracefulTimeout")
   override val producerBootstrapServers: String = conf.getString("blockchainAnchoring.kafkaProducer.bootstrapServers")

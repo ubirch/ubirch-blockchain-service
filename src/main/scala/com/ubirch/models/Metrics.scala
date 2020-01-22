@@ -8,7 +8,7 @@ trait Metrics {
     .namespace("blockchain_anchoring")
     .name("balance")
     .help("Shows the current balance for the blockchain anchoring system")
-    .labelNames("service", "blockchain")
+    .labelNames("service")
     .register()
 
 }
