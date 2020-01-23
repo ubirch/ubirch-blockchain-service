@@ -11,7 +11,7 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
   import com.ubirch.models.BlockchainProcessors._
   import com.ubirch.models.BlockchainSystem._
 
-  val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topic").split(",").toSet.filter(_.nonEmpty)
+  val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topics").split(",").toSet.filter(_.nonEmpty)
   final val blockchainType: BlockchainType = BlockchainType.fromString(conf.getString("blockchainAnchoring.type")).getOrElse(throw new Exception("No Blockchain type set"))
 
   logger.info("Configured blockchain={}", blockchainType.value)
