@@ -129,8 +129,10 @@ object BlockchainProcessors {
           logger.info("Sending transaction={} with count={}", message, count)
           val txHash = sendTransaction(hexMessage)
           val maybeResponse = getReceipt(txHash).map { _ =>
+            logger.info("Got transaction_hash={}", txHash)
             Response.Added(txHash, message, blockchainType.value, networkInfo, networkType)
           }.orElse {
+            logger.error("Timeout for transaction_hash={}", txHash)
             Option(Response.Timeout(txHash, message, blockchainType.value, networkInfo, networkType))
           }
 
