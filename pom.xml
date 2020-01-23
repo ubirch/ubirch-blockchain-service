@@ -40,16 +40,15 @@
 
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-
         <build.number>${timestamp}-dev</build.number>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <encoding>UTF-8</encoding>
-
         <timestamp>${maven.build.timestamp}</timestamp>
         <maven.build.timestamp.format>yyyyMMddHHmm</maven.build.timestamp.format>
 
         <scala.version>2.12.6</scala.version>
         <scala.compat.version>2.12</scala.compat.version>
+        <scalatest.version>3.0.5</scalatest.version>
 
         <!-- plugins -->
         <scala-maven-plugin.version>3.3.2</scala-maven-plugin.version>
@@ -113,6 +112,13 @@
         </dependency>
 
         <!-- Test -->
+
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.compat.version}</artifactId>
+            <version>${scalatest.version}</version>
+            <scope>test</scope>
+        </dependency>
 
         <dependency>
             <groupId>io.github.embeddedkafka</groupId>
