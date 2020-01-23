@@ -13,8 +13,6 @@ EXPOSE 9010
 EXPOSE 9020
 EXPOSE 4321
 
-ENV _JAVA_OPTIONS "-Xms128m -Xmx256m -Djava.awt.headless=true"
-
 # This config object
 # There are 3 supported blockchains
 # ethereum, ethereum-classic, iota
