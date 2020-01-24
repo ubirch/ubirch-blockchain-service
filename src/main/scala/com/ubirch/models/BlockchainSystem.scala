@@ -342,6 +342,7 @@ object BlockchainProcessors {
           val transactionsAndMessages = response.getTransactions.asScala.toList.zip(data)
 
           val responses = transactionsAndMessages.map { case (tx, data) =>
+            logger.info("Got transaction_hash={}", tx.getHash)
             Response.Added(tx.getHash, data.value, IOTAType.value, networkInfo, networkType)
           }
 
