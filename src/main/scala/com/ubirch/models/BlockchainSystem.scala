@@ -123,10 +123,10 @@ object BlockchainProcessors {
           Left(Nil)
         } else {
 
-          val count = getCount()
-          val hexMessage = createTransactionAsHexMessage(message, count)
+          val currentCount = getCount()
+          val hexMessage = createTransactionAsHexMessage(message, currentCount)
 
-          logger.info("Sending transaction={} with count={}", message, count)
+          logger.info("Sending transaction={} with count={}", message, currentCount)
           val txHash = sendTransaction(hexMessage)
           val maybeResponse = getReceipt(txHash).map { _ =>
             logger.info("Got transaction_hash={}", txHash)
