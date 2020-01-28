@@ -146,7 +146,7 @@ object BlockchainProcessors {
           val errorData = e.error.map(_.getData).getOrElse("No Data")
           logger.error("status=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
           if (errorCode == -32010 && errorMessage.contains("Insufficient funds"))
-            Right(NeedForPauseException("Insufficient funds.", errorMessage))
+            Left(Nil) //Right(NeedForPauseException("Insufficient funds.", errorMessage))
           else if (errorCode == -32010 && errorMessage.contains("another transaction with same nonce"))
             Right(NeedForPauseException("Possible transaction running", errorMessage))
           else if (errorCode == -32000 && errorMessage.contains("replacement transaction underpriced"))
