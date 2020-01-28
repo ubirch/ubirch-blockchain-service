@@ -13,6 +13,7 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
 
   val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topics").split(",").toSet.filter(_.nonEmpty)
   final val blockchainType: BlockchainType = BlockchainType.fromString(conf.getString("blockchainAnchoring.type")).getOrElse(throw new Exception("No Blockchain type set"))
+  final val flush: Boolean = conf.getBoolean("flush")
 
   logger.info("Configured blockchain={}", blockchainType.value)
 
@@ -21,23 +22,25 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
 
   override val process: Process = Process { consumerRecords =>
 
-    val data = consumerRecords.map(x => Data(x.value()))
+    if(!flush) {
+      val data = consumerRecords.map(x => Data(x.value()))
 
-    sendData(data) match {
-      case Left(responses) =>
-        if (responses.isEmpty) {
-          errorCounter.labels(blockchainType.value).inc()
-          //No need to react to this response as this type of response is intended to be a not critical blockchain exception/error, with is
-          //totally OK to just let go and continue with other values.
-        } else {
-          successCounter.labels(blockchainType.value).inc()
-          responses.map { res =>
-            producerTopics.map(topic => send(topic, JsonSupport.ToJson[Response](res).toString()))
+      sendData(data) match {
+        case Left(responses) =>
+          if (responses.isEmpty) {
+            errorCounter.labels(blockchainType.value).inc()
+            //No need to react to this response as this type of response is intended to be a not critical blockchain exception/error, with is
+            //totally OK to just let go and continue with other values.
+          } else {
+            successCounter.labels(blockchainType.value).inc()
+            responses.map { res =>
+              producerTopics.map(topic => send(topic, JsonSupport.ToJson[Response](res).toString()))
+            }
           }
-        }
-      case Right(exception) =>
-        errorCounter.labels(blockchainType.value).inc()
-        throw exception
+        case Right(exception) =>
+          errorCounter.labels(blockchainType.value).inc()
+          throw exception
+      }
     }
 
   }
