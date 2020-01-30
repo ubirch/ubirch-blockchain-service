@@ -115,22 +115,45 @@ object BlockchainProcessors {
           val currentCount = getCount()
           val hexMessage = createRawTransactionAsHexMessage(message, gasPrice, gasLimit, currentCount)
 
+          case class Context(
+              txHash: String,
+              txHashDuration: Long,
+              gasPrice: BigInt,
+              gasLimit: BigInt,
+              gasUsed: BigInt,
+              cumulativeGasUsed: BigInt,
+              usedDelta: Double
+          )
+
           logger.info("Sending transaction={} with count={}", message, currentCount)
+
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
           val maybeResponse = timedReceipt.result.map { receipt =>
-            logger.info(
-              "Got transaction_hash={} time_used={}ns gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
+
+            val context = Context(
               txHash,
               timedReceipt.elapsed,
               gasPrice,
               gasLimit,
               receipt.getGasUsed,
               receipt.getCumulativeGasUsed,
-              calcUsage(gasLimit, receipt.getGasUsed) * 100
+              calcUsage(gasLimit, receipt.getGasUsed)
+            )
+
+            logger.info(
+              "Got transaction_hash={} time_used={}ns gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
+              context.txHash,
+              context.txHashDuration,
+              context.gasPrice,
+              context.gasLimit,
+              context.gasUsed,
+              context.cumulativeGasUsed,
+              context.usedDelta * 100
             )
 
             Response.Added(txHash, message, blockchainType.value, networkInfo, networkType)
+
           }.orElse {
             logger.error("Timeout for transaction_hash={}", txHash)
             Option(Response.Timeout(txHash, message, blockchainType.value, networkInfo, networkType))
