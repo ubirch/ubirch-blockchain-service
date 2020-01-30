@@ -8,9 +8,7 @@ import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.services.BalanceMonitor
 import com.ubirch.util.Exceptions._
-import com.ubirch.util.RunTimeHook
-import org.iota.jota.model.Transfer
-import org.iota.jota.utils.TrytesConverter
+import com.ubirch.util.{ RunTimeHook, Time }
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -128,8 +126,9 @@ object BlockchainProcessors {
 
           logger.info("Sending transaction={} with count={}", message, currentCount)
           val txHash = sendTransaction(hexMessage)
-          val maybeResponse = getReceipt(txHash).map { receipt =>
-            logger.info("Got transaction_hash={} gas_used={} cumulative_gas_used={}", txHash, receipt.getGasUsed, receipt.getCumulativeGasUsed)
+          val timedReceipt = Time.time(getReceipt(txHash))
+          val maybeResponse = timedReceipt.result.map { receipt =>
+            logger.info("Got transaction_hash={} time_used={}ns gas_used={} cumulative_gas_used={}", txHash, timedReceipt.elapsed, receipt.getGasUsed, receipt.getCumulativeGasUsed)
             Response.Added(txHash, message, blockchainType.value, networkInfo, networkType)
           }.orElse {
             logger.error("Timeout for transaction_hash={}", txHash)
@@ -294,6 +293,8 @@ object BlockchainProcessors {
   implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] with ConfigBase with LazyLogging {
 
     import org.iota.jota.IotaAPI
+    import org.iota.jota.model.Transfer
+    import org.iota.jota.utils.TrytesConverter
 
     final val config = Try(conf.getConfig("blockchainAnchoring.iota")).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
     final val urlAsString = config.getString("url")
@@ -343,10 +344,9 @@ object BlockchainProcessors {
             null
           )
 
-          val transactionsAndMessages = response.getTransactions.asScala.toList.zip(data)
-
-          val responses = transactionsAndMessages.map { case (tx, data) =>
-            logger.info("Got transaction_hash={}", tx.getHash)
+          val timedTransactionsAndMessages = Time.time(response.getTransactions.asScala.toList.zip(data))
+          val responses = timedTransactionsAndMessages.result.map { case (tx, data) =>
+            logger.info("Got transaction_hash={} time_used={}ns", tx.getHash, timedTransactionsAndMessages.elapsed)
             Response.Added(tx.getHash, data.value, IOTAType.value, networkInfo, networkType)
           }
 
