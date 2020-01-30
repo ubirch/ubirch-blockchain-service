@@ -124,7 +124,7 @@ object BlockchainProcessors {
         } else {
 
           val currentCount = getCount()
-          val hexMessage = createTransactionAsHexMessage(message, currentCount)
+          val hexMessage = createRawTransactionAsHexMessage(message, currentCount)
 
           logger.info("Sending transaction={} with count={}", message, currentCount)
           val txHash = sendTransaction(hexMessage)
@@ -204,7 +204,7 @@ object BlockchainProcessors {
       txHash
     }
 
-    def createTransactionAsHexMessage(message: String, countOrNonce: BigInt): String = {
+    def createRawTransactionAsHexMessage(message: String, countOrNonce: BigInt): String = {
       val rawTransaction = RawTransaction.createTransaction(
         countOrNonce.bigInteger,
         Convert.toWei(gasPrice, Convert.Unit.GWEI).toBigInteger,
