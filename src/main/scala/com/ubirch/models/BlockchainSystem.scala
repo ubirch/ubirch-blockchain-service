@@ -19,11 +19,15 @@ import scala.util.Try
 
 object BlockchainSystem {
 
-  case class Data(value: String)
+  sealed trait BlockchainType {
+    val value: String
+  }
 
   trait BlockchainProcessor[Block[_], D] {
     def process(data: Seq[D]): Either[Seq[Response], Throwable]
   }
+
+  case class Data(value: String)
 
   case class EthereumBlockchain[D](data: Seq[D])(implicit val processor: BlockchainProcessor[EthereumBlockchain, D]) {
     def process = processor.process(data)
@@ -35,10 +39,6 @@ object BlockchainSystem {
 
   case class IOTABlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[IOTABlockchain, D]) {
     def process = processor.process(data)
-  }
-
-  sealed trait BlockchainType {
-    val value: String
   }
 
   object BlockchainType {
@@ -81,8 +81,8 @@ object BlockchainProcessors {
     final val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
     final val password = config.getString("password")
     final val address = config.getString("toAddress")
-    final val gasPrice = config.getString("gasPrice")
-    final val gasLimit: BigInt = config.getString("gasLimit").toInt
+    final val bootGasPrice = config.getString("gasPrice")
+    final val bootGasLimit: BigInt = config.getString("gasLimit").toInt
     final val networkInfo = config.getString("networkInfo")
     final val networkType = config.getString("networkType")
     final val chainId = config.getInt("chainId")
@@ -95,26 +95,17 @@ object BlockchainProcessors {
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
-    def verifyBalance: (Boolean, BigInt, String) = {
-
-      val balance = Balance.currentBalance
-      if (balance <= 0) {
-        (false, balance, "Current balance is zero")
-      } else if (balance < Convert.toWei(gasPrice, Convert.Unit.GWEI).toBigInteger) {
-        (false, balance, "Current balance is less than the configured gas price")
-      } else {
-        (true, balance, "All is good")
-      }
-
-    }
+    logger.info("Basic boot values- address={} boot_gas_price={} boot_gas_limit={}", address, bootGasPrice, bootGasLimit)
 
     def process(data: Data): Either[Seq[Response], Throwable] = {
+
+      val (gasPrice: BigInt, gasLimit: BigInt) = calcGasValues
 
       val message = data.value
 
       try {
 
-        val (isOK, _, verificationMessage) = verifyBalance
+        val (isOK, _, verificationMessage) = verifyBalance(gasPrice)
 
         if (!isOK) {
           logger.error(verificationMessage)
@@ -122,13 +113,23 @@ object BlockchainProcessors {
         } else {
 
           val currentCount = getCount()
-          val hexMessage = createRawTransactionAsHexMessage(message, currentCount)
+          val hexMessage = createRawTransactionAsHexMessage(message, gasPrice, gasLimit, currentCount)
 
           logger.info("Sending transaction={} with count={}", message, currentCount)
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
           val maybeResponse = timedReceipt.result.map { receipt =>
-            logger.info("Got transaction_hash={} time_used={}ns gas_used={} cumulative_gas_used={}", txHash, timedReceipt.elapsed, receipt.getGasUsed, receipt.getCumulativeGasUsed)
+            logger.info(
+              "Got transaction_hash={} time_used={}ns gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
+              txHash,
+              timedReceipt.elapsed,
+              gasPrice,
+              gasLimit,
+              receipt.getGasUsed,
+              receipt.getCumulativeGasUsed,
+              calcUsage(gasLimit, receipt.getGasUsed) * 100
+            )
+
             Response.Added(txHash, message, blockchainType.value, networkInfo, networkType)
           }.orElse {
             logger.error("Timeout for transaction_hash={}", txHash)
@@ -164,6 +165,27 @@ object BlockchainProcessors {
 
     }
 
+    def verifyBalance(gasPrice: BigInt): (Boolean, BigInt, String) = {
+
+      val balance = Balance.currentBalance
+      if (balance <= 0) {
+        (false, balance, "Current balance is zero")
+      } else if (balance < gasPrice.bigInteger) {
+        (false, balance, "Current balance is less than the configured gas price")
+      } else {
+        (true, balance, "All is good")
+      }
+
+    }
+
+    def calcGasValues: (BigInt, BigInt) = {
+      val gasPrice: BigInt = Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger
+      val gasLimit: BigInt = bootGasLimit
+      (gasPrice, gasLimit)
+    }
+
+    def calcUsage(gasLimit: BigInt, gasUsed: BigInt): BigInt = gasUsed.toDouble / gasLimit.toDouble
+
     def getReceipt(txHash: String, maxRetries: Int = MAX_RECEIPT_ATTEMPTS): Option[TransactionReceipt] = {
 
       def receipt: Option[TransactionReceipt] = {
@@ -182,7 +204,7 @@ object BlockchainProcessors {
           val maybeReceipt = receipt
 
           if (maybeReceipt.isEmpty) {
-            logger.info("receipt_attempt={} sleepInMillis={} ...", count, sleepInMillis)
+            logger.info("receipt_attempt={} sleep_in_millis={} ...", count, sleepInMillis)
             val sleep = if (sleepInMillis <= 0) DEFAULT_SLEEP_MILLIS else sleepInMillis
             Thread.sleep(sleep)
             go(count - 1, sleep - 1000)
@@ -207,10 +229,10 @@ object BlockchainProcessors {
       txHash
     }
 
-    def createRawTransactionAsHexMessage(message: String, countOrNonce: BigInt): String = {
+    def createRawTransactionAsHexMessage(message: String, gasPrice: BigInt, gasLimit: BigInt, countOrNonce: BigInt): String = {
       val rawTransaction = RawTransaction.createTransaction(
         countOrNonce.bigInteger,
-        Convert.toWei(gasPrice, Convert.Unit.GWEI).toBigInteger,
+        gasPrice.bigInteger,
         gasLimit.bigInteger,
         address,
         message
@@ -222,19 +244,19 @@ object BlockchainProcessors {
       hexMessage
     }
 
-    def balance(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST): BigInt = {
-      val transactionCountResponse = api.ethGetBalance(address, blockParameterName).send()
-      if (transactionCountResponse.hasError) throw GettingBalanceException(s"Error getting balance for address [$address]", Option(transactionCountResponse.getError))
-      transactionCountResponse.getBalance
-    }
-
     def getCount(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST): BigInt = {
       val transactionCountResponse = api.ethGetTransactionCount(address, blockParameterName).send()
       if (transactionCountResponse.hasError) throw GettingNonceException("Error getting transaction count(nonce)", Option(transactionCountResponse.getError))
       transactionCountResponse.getTransactionCount
     }
 
-    override def shutdownHook(): Unit = {
+    def balance(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST): BigInt = {
+      val transactionCountResponse = api.ethGetBalance(address, blockParameterName).send()
+      if (transactionCountResponse.hasError) throw GettingBalanceException(s"Error getting balance for address [$address]", Option(transactionCountResponse.getError))
+      transactionCountResponse.getBalance
+    }
+
+    def shutdownHook(): Unit = {
       logger.info("Shutting down blockchain_processor_system={} and balance monitor", blockchainType.value)
       balanceCancelable.cancel()
       api.shutdown()
