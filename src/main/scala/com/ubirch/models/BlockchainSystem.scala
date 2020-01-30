@@ -128,8 +128,8 @@ object BlockchainProcessors {
 
           logger.info("Sending transaction={} with count={}", message, currentCount)
           val txHash = sendTransaction(hexMessage)
-          val maybeResponse = getReceipt(txHash).map { _ =>
-            logger.info("Got transaction_hash={}", txHash)
+          val maybeResponse = getReceipt(txHash).map { receipt =>
+            logger.info("Got transaction_hash={} gas_used={} cumulative_gas_used={}", txHash, receipt.getGasUsed, receipt.getCumulativeGasUsed)
             Response.Added(txHash, message, blockchainType.value, networkInfo, networkType)
           }.orElse {
             logger.error("Timeout for transaction_hash={}", txHash)
