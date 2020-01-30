@@ -151,13 +151,13 @@ object BlockchainProcessors {
           } else if (errorCode == -32000 && errorMessage.contains("intrinsic gas too low")) {
             logger.error("Seems that the Gas Limit is too low, try increasing it. gas_limit={}", gasLimit)
             Left(Nil)
-          } else if (errorCode == -32010 && errorMessage.contains("another transaction with same nonce"))
+          } else if (errorCode == -32010 && errorMessage.contains("another transaction with same nonce")) {
             Right(NeedForPauseException("Possible transaction running", errorMessage))
-          else if (errorCode == -32000 && errorMessage.contains("replacement transaction underpriced"))
+          } else if (errorCode == -32000 && errorMessage.contains("replacement transaction underpriced")) {
             Right(NeedForPauseException("Possible transaction running", errorMessage))
-          else if (errorCode == -32000 && errorMessage.contains("nonce too low"))
+          } else if (errorCode == -32000 && errorMessage.contains("nonce too low")) {
             Right(NeedForPauseException("Nonce too low", errorMessage))
-          else Left(Nil)
+          } else Left(Nil)
         case e: Exception =>
           logger.error("Something critical happened: ", e)
           Right(e)

@@ -22,7 +22,7 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
 
   override val process: Process = Process { consumerRecords =>
 
-    if(!flush) {
+    if (!flush) {
       val data = consumerRecords.map(x => Data(x.value()))
 
       sendData(data) match {
