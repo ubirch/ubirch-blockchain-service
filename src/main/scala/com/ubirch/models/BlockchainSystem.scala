@@ -145,9 +145,13 @@ object BlockchainProcessors {
           val errorCode = e.error.map(_.getCode).getOrElse(-99)
           val errorData = e.error.map(_.getData).getOrElse("No Data")
           logger.error("status=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
-          if (errorCode == -32010 && errorMessage.contains("Insufficient funds"))
-            Left(Nil) //Right(NeedForPauseException("Insufficient funds.", errorMessage))
-          else if (errorCode == -32010 && errorMessage.contains("another transaction with same nonce"))
+          if (errorCode == -32010 && errorMessage.contains("Insufficient funds")) {
+            logger.error("current_balance={}", Balance.currentBalance)
+            Left(Nil)
+          } else if (errorCode == -32000 && errorMessage.contains("intrinsic gas too low")) {
+            logger.error("Seems that the Gas Limit is too low, try increasing it. gas_limit={}", gasLimit)
+            Left(Nil)
+          } else if (errorCode == -32010 && errorMessage.contains("another transaction with same nonce"))
             Right(NeedForPauseException("Possible transaction running", errorMessage))
           else if (errorCode == -32000 && errorMessage.contains("replacement transaction underpriced"))
             Right(NeedForPauseException("Possible transaction running", errorMessage))
