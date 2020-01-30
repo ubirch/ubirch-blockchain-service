@@ -6,8 +6,7 @@ import org.iota.jota.builder.AddressRequest
 
 object IOTAAddressGenerator extends LazyLogging {
 
-
-  def createAddress(seed: String, securityLevel: Int = 2)  = {
+  def createAddress(seed: String, securityLevel: Int = 2) = {
     try {
       val response = IOTAProcessor.api.generateNewAddresses(
         new AddressRequest.Builder(seed, securityLevel)
@@ -27,8 +26,8 @@ object IOTAAddressGenerator extends LazyLogging {
   def main(args: Array[String]): Unit = {
 
     /**
-     * You can run cat /dev/urandom |tr -dc A-Z9|head -c${1:-81} to generate a seed
-     */
+      * You can run cat /dev/urandom |tr -dc A-Z9|head -c${1:-81} to generate a seed
+      */
 
     val seed = "This is a seed."
     val securityLevel = 2
@@ -38,6 +37,5 @@ object IOTAAddressGenerator extends LazyLogging {
     logger.info("Your address is {}", response.getAddresses)
 
   }
-
 
 }
