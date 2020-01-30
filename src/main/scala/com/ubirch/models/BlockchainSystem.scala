@@ -184,7 +184,7 @@ object BlockchainProcessors {
       (gasPrice, gasLimit)
     }
 
-    def calcUsage(gasLimit: BigInt, gasUsed: BigInt): BigInt = gasUsed.toDouble / gasLimit.toDouble
+    def calcUsage(gasLimit: BigInt, gasUsed: BigInt) = gasUsed.toDouble / gasLimit.toDouble
 
     def getReceipt(txHash: String, maxRetries: Int = MAX_RECEIPT_ATTEMPTS): Option[TransactionReceipt] = {
 
