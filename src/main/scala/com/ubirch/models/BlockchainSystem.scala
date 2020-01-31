@@ -66,6 +66,7 @@ object BlockchainProcessors {
 
   abstract class EthereumBaseProcessor(config: Config, blockchainType: BlockchainType)
     extends BalanceMonitor
+    with EtherumInternalMetrics
     with RunTimeHook
     with WithExecutionContext
     with ConfigBase
@@ -112,6 +113,9 @@ object BlockchainProcessors {
           Left(Nil)
         } else {
 
+          gasPriceGauge.labels(blockchainType.value).set(gasPrice.toDouble)
+          gasLimitGauge.labels(blockchainType.value).set(gasLimit.toDouble)
+
           val currentCount = getCount(address)
           val hexMessage = createRawTransactionAsHexMessage(address, message, gasPrice, gasLimit, currentCount, chainId, credentials)
 
@@ -140,6 +144,9 @@ object BlockchainProcessors {
               receipt.getCumulativeGasUsed,
               calcUsage(gasLimit, receipt.getGasUsed)
             )
+
+            gasUsedGauge.labels(blockchainType.value).set(context.gasUsed.toDouble)
+            usedDeltaGauge.labels(blockchainType.value).set(context.usedDelta)
 
             logger.info(
               "Got transaction_hash={} time_used={}ns gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
