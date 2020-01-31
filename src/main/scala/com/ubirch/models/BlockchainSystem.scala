@@ -67,6 +67,7 @@ object BlockchainProcessors {
   abstract class EthereumBaseProcessor(config: Config, blockchainType: BlockchainType)
     extends BalanceMonitor
     with EtherumInternalMetrics
+    with TimeMetrics
     with RunTimeHook
     with WithExecutionContext
     with ConfigBase
@@ -147,6 +148,7 @@ object BlockchainProcessors {
 
             gasUsedGauge.labels(blockchainType.value).set(context.gasUsed.toDouble)
             usedDeltaGauge.labels(blockchainType.value).set(context.usedDelta)
+            txTimeGauge.labels(blockchainType.value).set(context.txHashDuration)
 
             logger.info(
               "Got transaction_hash={} time_used={}ns gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
@@ -342,7 +344,7 @@ object BlockchainProcessors {
 
   }
 
-  implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] with ConfigBase with LazyLogging {
+  implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] with TimeMetrics with ConfigBase with LazyLogging {
 
     import org.iota.jota.IotaAPI
     import org.iota.jota.model.Transfer
@@ -399,6 +401,8 @@ object BlockchainProcessors {
           val timedTransactionsAndMessages = Time.time(response.getTransactions.asScala.toList.zip(data))
           val responses = timedTransactionsAndMessages.result.map { case (tx, data) =>
             logger.info("Got transaction_hash={} time_used={}ns", tx.getHash, timedTransactionsAndMessages.elapsed)
+            txTimeGauge.labels(IOTAType.value).set(timedTransactionsAndMessages.elapsed)
+
             Response.Added(tx.getHash, data.value, IOTAType.value, networkInfo, networkType)
           }
 

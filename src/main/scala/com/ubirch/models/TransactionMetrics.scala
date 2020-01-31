@@ -18,6 +18,16 @@ trait TransactionMetrics {
 
 }
 
+trait TimeMetrics {
+
+  val txTimeGauge = Gauge.build()
+    .name("time_used")
+    .help("Represents the time used when getting a valid response")
+    .labelNames("service")
+    .register()
+
+}
+
 trait EtherumInternalMetrics {
 
   val gasPriceGauge = Gauge.build()
