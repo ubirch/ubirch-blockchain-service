@@ -71,9 +71,9 @@ object BlockchainProcessors {
     with ConfigBase
     with LazyLogging {
 
-    import org.web3j.crypto.{ RawTransaction, TransactionEncoder, WalletUtils }
+    import org.web3j.crypto.{ Credentials, RawTransaction, TransactionEncoder, WalletUtils }
     import org.web3j.protocol.Web3j
-    import org.web3j.protocol.core.DefaultBlockParameterName
+    import org.web3j.protocol.core.{ DefaultBlockParameter, DefaultBlockParameterName }
     import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
     import org.web3j.protocol.http.HttpService
     import org.web3j.utils.{ Convert, Numeric }
@@ -95,7 +95,7 @@ object BlockchainProcessors {
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
-    logger.info("Basic boot values- address={} boot_gas_price={} boot_gas_limit={}", address, bootGasPrice, bootGasLimit)
+    logger.info("Basic boot values- url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, chainId)
 
     def process(data: Data): Either[Seq[Response], Throwable] = {
 
@@ -112,8 +112,8 @@ object BlockchainProcessors {
           Left(Nil)
         } else {
 
-          val currentCount = getCount()
-          val hexMessage = createRawTransactionAsHexMessage(message, gasPrice, gasLimit, currentCount)
+          val currentCount = getCount(address)
+          val hexMessage = createRawTransactionAsHexMessage(address, message, gasPrice, gasLimit, currentCount, chainId, credentials)
 
           case class Context(
               txHash: String,
@@ -252,7 +252,7 @@ object BlockchainProcessors {
       txHash
     }
 
-    def createRawTransactionAsHexMessage(message: String, gasPrice: BigInt, gasLimit: BigInt, countOrNonce: BigInt): String = {
+    def createRawTransactionAsHexMessage(address: String, message: String, gasPrice: BigInt, gasLimit: BigInt, countOrNonce: BigInt, chainId: Int, credentials: Credentials): String = {
       val rawTransaction = RawTransaction.createTransaction(
         countOrNonce.bigInteger,
         gasPrice.bigInteger,
@@ -267,16 +267,16 @@ object BlockchainProcessors {
       hexMessage
     }
 
-    def getCount(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST): BigInt = {
-      val transactionCountResponse = api.ethGetTransactionCount(address, blockParameterName).send()
+    def getCount(address: String, blockParameter: DefaultBlockParameter = DefaultBlockParameterName.LATEST): BigInt = {
+      val transactionCountResponse = api.ethGetTransactionCount(address, blockParameter).send()
       if (transactionCountResponse.hasError) throw GettingNonceException("Error getting transaction count(nonce)", Option(transactionCountResponse.getError))
       transactionCountResponse.getTransactionCount
     }
 
-    def balance(blockParameterName: DefaultBlockParameterName = DefaultBlockParameterName.LATEST): BigInt = {
-      val transactionCountResponse = api.ethGetBalance(address, blockParameterName).send()
+    def balance(address: String, blockParameter: DefaultBlockParameter = DefaultBlockParameterName.LATEST): (String, BigInt) = {
+      val transactionCountResponse = api.ethGetBalance(address, blockParameter).send()
       if (transactionCountResponse.hasError) throw GettingBalanceException(s"Error getting balance for address [$address]", Option(transactionCountResponse.getError))
-      transactionCountResponse.getBalance
+      (address, transactionCountResponse.getBalance)
     }
 
     def shutdownHook(): Unit = {
@@ -299,7 +299,7 @@ object BlockchainProcessors {
 
       override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels(EthereumType.value).set(balance.toDouble)
 
-      override def queryBalance: BigInt = balance()
+      override def queryBalance: (String, BigInt) = balance(address)
     }
 
     override def process(data: Seq[Data]): Either[Seq[Response], Throwable] =
@@ -323,7 +323,7 @@ object BlockchainProcessors {
 
       override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels(EthereumClassicType.value).set(balance.toDouble)
 
-      override def queryBalance: BigInt = balance()
+      override def queryBalance: (String, BigInt) = balance(address)
     }
 
     override def process(data: Seq[Data]): Either[Seq[Response], Throwable] =

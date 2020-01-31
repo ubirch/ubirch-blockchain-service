@@ -20,9 +20,9 @@ trait BalanceMonitor extends LazyLogging {
     private val balance = new AtomicReference[BigInt](-1)
 
     private def action(): Unit = {
-      val newBalance = queryBalance
+      val (address, newBalance) = queryBalance
       registerNewBalance(newBalance)
-      logger.info("local_balance={} incoming_balance={}", balance.get(), newBalance)
+      logger.info("local_balance={} incoming_balance={} address={}", balance.get(), newBalance, address)
       balance.set(newBalance)
     }
 
@@ -35,6 +35,6 @@ trait BalanceMonitor extends LazyLogging {
 
   def registerNewBalance(balance: BigInt): Unit
 
-  def queryBalance: BigInt
+  def queryBalance: (String, BigInt)
 
 }
