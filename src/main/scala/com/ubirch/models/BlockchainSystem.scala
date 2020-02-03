@@ -178,7 +178,7 @@ object BlockchainProcessors {
           val errorData = e.error.map(_.getData).getOrElse("No Data")
           logger.error("status=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
           if (errorCode == -32010 && errorMessage.contains("Insufficient funds")) {
-            logger.error("current_balance={}", Balance.currentBalance)
+            logger.error("Insufficient funds current_balance={}", Balance.currentBalance)
             Left(Nil)
           } else if (errorCode == -32000 && errorMessage.contains("intrinsic gas too low")) {
             logger.error("Seems that the Gas Limit is too low, try increasing it. gas_limit={}", gasLimit)
