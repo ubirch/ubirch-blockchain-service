@@ -19,9 +19,10 @@ EXPOSE 4321
 # At this moment, they share the same configs.
 ENV BLOCKCHAIN "ethereum"
 
+ENV _JAVA_OPTIONS "-Xms500m -Xmx1G"
+
 ENTRYPOINT \
   /usr/bin/java \
-  "-Xms1G -Xmx2G" \
   "-Djava.security.egd=file:/dev/./urandom" \
   "-Djava.rmi.server.hostname=localhost" \
   "-Dcom.sun.management.jmxremote" \
