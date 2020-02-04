@@ -21,7 +21,7 @@ ENV BLOCKCHAIN "ethereum"
 
 ENTRYPOINT \
   /usr/bin/java \
-  "-Xms500M -Xmx2G" \
+  "-Xms1G -Xmx2G" \
   "-Djava.security.egd=file:/dev/./urandom" \
   "-Djava.rmi.server.hostname=localhost" \
   "-Dcom.sun.management.jmxremote" \
