@@ -71,5 +71,5 @@ trait Bucket extends ExpressKafkaApp[String, String, Unit] {
   override val consumerReconnectBackoffMaxMsConfig: Long = conf.getLong("blockchainAnchoring.kafkaConsumer.reconnectBackoffMaxMsConfig")
   override val lingerMs: Int = conf.getInt("blockchainAnchoring.kafkaProducer.lingerMS")
 
-  override def maxTimeAggregationSeconds: Long = 120
+  override val maxTimeAggregationSeconds: Long = 120
 }

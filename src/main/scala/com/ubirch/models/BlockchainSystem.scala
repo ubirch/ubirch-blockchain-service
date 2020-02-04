@@ -64,8 +64,9 @@ object BlockchainSystem {
 object BlockchainProcessors {
   import BlockchainSystem._
 
-  abstract class EthereumBaseProcessor(config: Config, blockchainType: BlockchainType)
+  abstract class EthereumBaseProcessor(config: Config, val blockchainType: BlockchainType)
     extends BalanceMonitor
+    with BalanceGaugeMetric
     with EtherumInternalMetrics
     with TimeMetrics
     with RunTimeHook
@@ -293,54 +294,43 @@ object BlockchainProcessors {
       api.shutdown()
     }
 
+    def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels(blockchainType.value).set(balance.toDouble)
+
+    def queryBalance: (String, BigInt) = balance(address)
+
+  }
+
+  trait BlockchainProcessorGlue extends ConfigBase {
+
+    def blockchainType: BlockchainType
+
+    val config: Config = Try(conf.getConfig("blockchainAnchoring." + blockchainType.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
+
+    val processor: EthereumBaseProcessor = new EthereumBaseProcessor(config, blockchainType) {}
+
+    def process(data: Seq[Data]): Either[Seq[Response], Throwable] =
+      data.toList match {
+        case List(d) => processor.process(d)
+        case Nil => Left(Nil)
+        case _ => Right(new Exception("Please configure for this blockchain a poll size of 1"))
+      }
+
   }
 
   implicit object EthereumProcessor
     extends BlockchainProcessor[EthereumBlockchain, Data]
-    with BalanceGaugeMetric
+    with BlockchainProcessorGlue
     with ConfigBase
     with LazyLogging {
-
-    final val config = Try(conf.getConfig("blockchainAnchoring." + EthereumType.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
-
-    val processor = new EthereumBaseProcessor(config, EthereumType) {
-
-      override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels(EthereumType.value).set(balance.toDouble)
-
-      override def queryBalance: (String, BigInt) = balance(address)
-    }
-
-    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] =
-      data.toList match {
-        case List(d) => processor.process(d)
-        case Nil => Left(Nil)
-        case _ => Right(new Exception("Please configure for this blockchain a poll size of 1"))
-      }
-
+    override def blockchainType: BlockchainType = EthereumType
   }
 
   implicit object EthereumClassicProcessor
     extends BlockchainProcessor[EthereumClassicBlockchain, Data]
-    with BalanceGaugeMetric
+    with BlockchainProcessorGlue
     with ConfigBase
     with LazyLogging {
-
-    final val config = Try(conf.getConfig("blockchainAnchoring." + EthereumClassicType.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
-
-    val processor = new EthereumBaseProcessor(config, EthereumClassicType) {
-
-      override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels(EthereumClassicType.value).set(balance.toDouble)
-
-      override def queryBalance: (String, BigInt) = balance(address)
-    }
-
-    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] =
-      data.toList match {
-        case List(d) => processor.process(d)
-        case Nil => Left(Nil)
-        case _ => Right(new Exception("Please configure for this blockchain a poll size of 1"))
-      }
-
+    override def blockchainType: BlockchainType = EthereumClassicType
   }
 
   implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] with TimeMetrics with ConfigBase with LazyLogging {
