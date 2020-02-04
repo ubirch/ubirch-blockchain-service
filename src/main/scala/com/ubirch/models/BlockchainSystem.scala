@@ -44,7 +44,7 @@ object BlockchainSystem {
   object BlockchainType {
     def isValid(value: String): Boolean = fromString(value).isDefined
     def fromString(value: String): Option[BlockchainType] = options.find(_.value == value)
-    def options: List[BlockchainType] = List(EthereumType, EthereumClassicType, IOTAType)
+    val options: List[BlockchainType] = List(EthereumType, EthereumClassicType, IOTAType)
   }
 
   case object EthereumType extends BlockchainType {
@@ -69,7 +69,6 @@ object BlockchainProcessors {
     with EtherumInternalMetrics
     with TimeMetrics
     with RunTimeHook
-    with WithExecutionContext
     with ConfigBase
     with LazyLogging {
 
@@ -304,8 +303,6 @@ object BlockchainProcessors {
 
     final val config = Try(conf.getConfig("blockchainAnchoring." + EthereumType.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
 
-    println("HOLA")
-
     val processor = new EthereumBaseProcessor(config, EthereumType) {
 
       override def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels(EthereumType.value).set(balance.toDouble)
@@ -328,8 +325,6 @@ object BlockchainProcessors {
     with ConfigBase
     with LazyLogging {
 
-    println("HOLA 222")
-
     final val config = Try(conf.getConfig("blockchainAnchoring." + EthereumClassicType.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
 
     val processor = new EthereumBaseProcessor(config, EthereumClassicType) {
@@ -349,8 +344,6 @@ object BlockchainProcessors {
   }
 
   implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] with TimeMetrics with ConfigBase with LazyLogging {
-
-    println("HOLA 3333")
 
     import org.iota.jota.IotaAPI
     import org.iota.jota.model.Transfer

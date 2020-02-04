@@ -3,19 +3,15 @@ package com.ubirch.services
 import java.util.concurrent.atomic.AtomicReference
 
 import com.typesafe.scalalogging.LazyLogging
-import monix.execution.{ Cancelable, Scheduler }
+import com.ubirch.models.WithExecutionContext
+import monix.execution.Cancelable
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
-trait BalanceMonitor extends LazyLogging {
-
-  implicit def ec: ExecutionContext
+trait BalanceMonitor extends WithExecutionContext with LazyLogging {
 
   object Balance {
-
-    implicit lazy val scheduler: Scheduler = monix.execution.Scheduler(ec)
 
     private val balance = new AtomicReference[BigInt](-1)
 
