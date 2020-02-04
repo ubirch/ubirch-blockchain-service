@@ -16,6 +16,7 @@ import scala.compat.java8.OptionConverters._
 import scala.concurrent.duration._
 import scala.language.{ higherKinds, postfixOps }
 import scala.util.Try
+import scala.concurrent.blocking
 
 object BlockchainSystem {
 
@@ -246,7 +247,7 @@ object BlockchainProcessors {
 
       }
 
-      go(maxRetries)
+      blocking(go(maxRetries))
 
     }
 
