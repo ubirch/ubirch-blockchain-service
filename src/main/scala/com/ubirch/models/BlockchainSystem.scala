@@ -14,7 +14,7 @@ import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
 import scala.concurrent.duration._
-import scala.language.{ higherKinds, postfixOps }
+import scala.language.postfixOps
 import scala.util.Try
 import scala.concurrent.blocking
 
@@ -24,22 +24,9 @@ object BlockchainSystem {
     val value: String
   }
 
-  trait BlockchainProcessor[Block[_], D] {
+  trait BlockchainProcessor[D] {
+    def blockchainType: BlockchainType
     def process(data: Seq[D]): Either[Seq[Response], Throwable]
-  }
-
-  case class Data(value: String)
-
-  case class EthereumBlockchain[D](data: Seq[D])(implicit val processor: BlockchainProcessor[EthereumBlockchain, D]) {
-    def process = processor.process(data)
-  }
-
-  case class EthereumClassicBlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[EthereumClassicBlockchain, D]) {
-    def process = processor.process(data)
-  }
-
-  case class IOTABlockchain[D](data: Seq[D])(implicit processor: BlockchainProcessor[IOTABlockchain, D]) {
-    def process = processor.process(data)
   }
 
   object BlockchainType {
@@ -110,17 +97,18 @@ object BlockchainProcessors {
 
     logger.info("Basic boot values- url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, chainId)
 
-    def process(data: Data): Either[Seq[Response], Throwable] = {
+    def process(data: String): Either[Seq[Response], Throwable] = {
 
       val (gasPrice: BigInt, gasLimit: BigInt) = calcGasValues
 
-      val message = data.value
-
       try {
 
-        val (isOK, _, verificationMessage) = verifyBalance(gasPrice)
+        val (isOK, verificationMessage) = verifyBalance(gasPrice)
 
-        if (!isOK) {
+        if (isOK.isEmpty) {
+          logger.info("Balance Monitor not yet started")
+          Right(NeedForPauseException("Balance not yet checked", "Balance has not started"))
+        } else if (!isOK.exists(x => x)) {
           logger.error(verificationMessage)
           Left(Nil)
         } else {
@@ -129,9 +117,9 @@ object BlockchainProcessors {
           gasLimitGauge.labels(blockchainType.value).set(gasLimit.toDouble)
 
           val currentCount = getCount(address)
-          val hexMessage = createRawTransactionAsHexMessage(address, message, gasPrice, gasLimit, currentCount, chainId, credentials)
+          val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, currentCount, chainId, credentials)
 
-          logger.info("Sending transaction={} with count={}", message, currentCount)
+          logger.info("Sending transaction={} with count={}", data, currentCount)
 
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
@@ -162,11 +150,11 @@ object BlockchainProcessors {
               context.usedDelta * 100
             )
 
-            Response.Added(txHash, message, blockchainType.value, networkInfo, networkType)
+            Response.Added(txHash, data, blockchainType.value, networkInfo, networkType)
 
           }.orElse {
             logger.error("Timeout for transaction_hash={}", txHash)
-            Option(Response.Timeout(txHash, message, blockchainType.value, networkInfo, networkType))
+            Option(Response.Timeout(txHash, data, blockchainType.value, networkInfo, networkType))
           }
 
           Left(maybeResponse.toList)
@@ -177,7 +165,7 @@ object BlockchainProcessors {
           val errorMessage = e.error.map(_.getMessage).getOrElse("No Message")
           val errorCode = e.error.map(_.getCode).getOrElse(-99)
           val errorData = e.error.map(_.getData).getOrElse("No Data")
-          logger.error("status=KO message={} error={} code={} data={} exceptionName={}", message, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
+          logger.error("status=KO message={} error={} code={} data={} exceptionName={}", data, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
           if (errorCode == -32010 && errorMessage.contains("Insufficient funds")) {
             logger.error("Insufficient funds current_balance={}", Balance.currentBalance)
             Left(Nil)
@@ -198,15 +186,16 @@ object BlockchainProcessors {
 
     }
 
-    def verifyBalance(gasPrice: BigInt): (Boolean, BigInt, String) = {
-
+    def verifyBalance(gasPrice: BigInt): (Option[Boolean], String) = {
       val balance = Balance.currentBalance
-      if (balance <= 0) {
-        (false, balance, "Current balance is zero")
+      if (balance < 0) {
+        (None, "Balance not yet checked. Retrying")
+      } else if (balance == 0) {
+        (Option(false), "Current balance is zero")
       } else if (balance < gasPrice.bigInteger) {
-        (false, balance, "Current balance is less than the configured gas price")
+        (Option(false), "Current balance is less than the configured gas price")
       } else {
-        (true, balance, "All is good")
+        (Option(true), "All is good")
       }
 
     }
@@ -309,7 +298,7 @@ object BlockchainProcessors {
 
     val processor: EthereumBaseProcessor = new EthereumBaseProcessor(config, blockchainType) {}
 
-    def process(data: Seq[Data]): Either[Seq[Response], Throwable] =
+    def process(data: Seq[String]): Either[Seq[Response], Throwable] =
       data.toList match {
         case List(d) => processor.process(d)
         case Nil => Left(Nil)
@@ -318,27 +307,27 @@ object BlockchainProcessors {
 
   }
 
-  implicit object EthereumProcessor
-    extends BlockchainProcessor[EthereumBlockchain, Data]
+  object EthereumProcessor extends BlockchainProcessor[String]
     with BlockchainProcessorGlue
     with ConfigBase
     with LazyLogging {
     override def blockchainType: BlockchainType = EthereumType
   }
 
-  implicit object EthereumClassicProcessor
-    extends BlockchainProcessor[EthereumClassicBlockchain, Data]
+  object EthereumClassicProcessor extends BlockchainProcessor[String]
     with BlockchainProcessorGlue
     with ConfigBase
     with LazyLogging {
     override def blockchainType: BlockchainType = EthereumClassicType
   }
 
-  implicit object IOTAProcessor extends BlockchainProcessor[IOTABlockchain, Data] with TimeMetrics with ConfigBase with LazyLogging {
+  object IOTAProcessor extends BlockchainProcessor[String] with TimeMetrics with ConfigBase with LazyLogging {
 
     import org.iota.jota.IotaAPI
     import org.iota.jota.model.Transfer
     import org.iota.jota.utils.TrytesConverter
+
+    override def blockchainType: BlockchainType = IOTAType
 
     final val config = Try(conf.getConfig("blockchainAnchoring.iota")).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
     final val urlAsString = config.getString("url")
@@ -360,7 +349,7 @@ object BlockchainProcessors {
       .port(url.getPort)
       .build()
 
-    override def process(data: Seq[Data]): Either[Seq[Response], Throwable] = {
+    override def process(data: Seq[String]): Either[Seq[Response], Throwable] = {
 
       if (data.isEmpty) {
         Left(Nil)
@@ -371,7 +360,7 @@ object BlockchainProcessors {
         try {
 
           val transfers = data.map { x =>
-            val trytes = TrytesConverter.asciiToTrytes(x.value) // Note: if message > 2187 Trytes, it is sent in several transactions
+            val trytes = TrytesConverter.asciiToTrytes(x) // Note: if message > 2187 Trytes, it is sent in several transactions
             new Transfer(completeAddress, 0, trytes, tag)
           }
 
@@ -391,18 +380,18 @@ object BlockchainProcessors {
           val timedTransactionsAndMessages = Time.time(response.getTransactions.asScala.toList.zip(data))
           val responses = timedTransactionsAndMessages.result.map { case (tx, data) =>
             logger.info("Got transaction_hash={} time_used={}ns", tx.getHash, timedTransactionsAndMessages.elapsed)
-            txTimeGauge.labels(IOTAType.value).set(timedTransactionsAndMessages.elapsed)
+            txTimeGauge.labels(blockchainType.value).set(timedTransactionsAndMessages.elapsed)
 
-            Response.Added(tx.getHash, data.value, IOTAType.value, networkInfo, networkType)
+            Response.Added(tx.getHash, data, blockchainType.value, networkInfo, networkType)
           }
 
           Left(responses)
         } catch {
           case e: org.iota.jota.error.ConnectorException =>
-            logger.error("status=KO message={} error={} code={} exceptionName={}", data.map(_.value).mkString(", "), e.getMessage, e.getErrorCode, e.getClass.getCanonicalName)
+            logger.error("status=KO message={} error={} code={} exceptionName={}", data.mkString(", "), e.getMessage, e.getErrorCode, e.getClass.getCanonicalName)
             Right(NeedForPauseException("Jota ConnectorException", e.getMessage))
           case e: org.iota.jota.error.InternalException =>
-            logger.error("status=KO message={} error={} exceptionName={}", data.map(_.value).mkString(", "), e.getMessage, e.getClass.getCanonicalName)
+            logger.error("status=KO message={} error={} exceptionName={}", data.mkString(", "), e.getMessage, e.getClass.getCanonicalName)
             Right(NeedForPauseException("Jota InternalException", e.getMessage))
           case e: Exception =>
             logger.error("Something critical happened: ", e)

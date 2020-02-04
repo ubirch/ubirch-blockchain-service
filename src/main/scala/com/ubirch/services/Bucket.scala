@@ -13,19 +13,20 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
 
   val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topics").split(",").toSet.filter(_.nonEmpty)
   final val blockchainType: BlockchainType = BlockchainType.fromString(conf.getString("blockchainAnchoring.type")).getOrElse(throw new Exception("No Blockchain type set"))
+  final val blockchain = blockchainType match {
+    case EthereumType => EthereumProcessor
+    case EthereumClassicType => EthereumClassicProcessor
+    case IOTAType => IOTAProcessor
+  }
   final val flush: Boolean = conf.getBoolean("flush")
 
   logger.info("Configured blockchain={}", blockchainType.value)
 
-  //We have this dummy call in order to boost things up, like getting the current balance.
-  sendData(Nil)
-
   override val process: Process = Process { consumerRecords =>
 
     if (!flush) {
-      val data = consumerRecords.map(x => Data(x.value()))
-
-      sendData(data) match {
+      val data = consumerRecords.map(x => x.value())
+      blockchain.process(data) match {
         case Left(responses) =>
           if (responses.isEmpty) {
             errorCounter.labels(blockchainType.value).inc()
@@ -44,13 +45,6 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
     }
 
   }
-
-  def sendData(data: Seq[Data]) =
-    blockchainType match {
-      case EthereumType => EthereumBlockchain(data).process
-      case EthereumClassicType => EthereumClassicBlockchain(data).process
-      case IOTAType => IOTABlockchain(data).process
-    }
 
 }
 
