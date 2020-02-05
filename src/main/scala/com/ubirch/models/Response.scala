@@ -20,7 +20,9 @@ import scala.util.control.NonFatal
   * }
   */
 
-case class Response(status: String, txId: String, message: String, blockchain: String, networkInfo: String, networkType: String, created: Date)
+case class Response(status: String, txId: String, message: String, blockchain: String, networkInfo: String, networkType: String, created: Date) {
+  def withCreated(newCreated: Date): Response = copy(created = newCreated)
+}
 
 object Response {
 

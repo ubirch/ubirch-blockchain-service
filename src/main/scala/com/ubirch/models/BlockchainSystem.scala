@@ -13,10 +13,10 @@ import com.ubirch.util.{ RunTimeHook, Time }
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
+import scala.concurrent.blocking
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Try
-import scala.concurrent.blocking
 
 object BlockchainSystem {
 
@@ -63,8 +63,8 @@ object BlockchainProcessors {
 
     import org.web3j.crypto.{ Credentials, RawTransaction, TransactionEncoder, WalletUtils }
     import org.web3j.protocol.Web3j
-    import org.web3j.protocol.core.{ DefaultBlockParameter, DefaultBlockParameterName }
     import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
+    import org.web3j.protocol.core.{ DefaultBlockParameter, DefaultBlockParameterName }
     import org.web3j.protocol.http.HttpService
     import org.web3j.utils.{ Convert, Numeric }
 
@@ -81,7 +81,7 @@ object BlockchainProcessors {
     final val MAX_RECEIPT_ATTEMPTS = config.getInt("maxReceiptAttempts")
     final val checkBalanceEveryInSeconds = config.getInt("checkBalanceEveryInSeconds")
 
-    final val api = Web3j.build(new HttpService(url))
+    final val api: Web3j = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
