@@ -15,11 +15,14 @@ trait BalanceMonitor extends WithExecutionContext with LazyLogging {
 
     private val balance = new AtomicReference[BigInt](-1)
 
-    private def action(): Unit = {
+    private def action(): Unit = try {
       val (address, newBalance) = queryBalance
       registerNewBalance(newBalance)
       logger.info("local_balance={} incoming_balance={} address={}", balance.get(), newBalance, address)
       balance.set(newBalance)
+    } catch {
+      case e: Exception =>
+        logger.error("Error getting balance: " + e.getMessage, e)
     }
 
     def start(every: FiniteDuration = 30 seconds): Cancelable =
