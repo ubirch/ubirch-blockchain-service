@@ -1,4 +1,4 @@
-package com.ubirch.models
+package com.ubirch.services
 
 import java.net.URL
 
@@ -6,7 +6,7 @@ import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
-import com.ubirch.services.BalanceMonitor
+import com.ubirch.models.{ BalanceGaugeMetric, EtherumInternalMetrics, Response, TimeMetrics }
 import com.ubirch.util.Exceptions._
 import com.ubirch.util.{ RunTimeHook, Time }
 

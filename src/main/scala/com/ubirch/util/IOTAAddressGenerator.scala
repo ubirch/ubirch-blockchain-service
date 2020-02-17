@@ -1,7 +1,7 @@
 package com.ubirch.util
 
 import com.typesafe.scalalogging.LazyLogging
-import com.ubirch.models.BlockchainProcessors.IOTAProcessor
+import com.ubirch.services.BlockchainProcessors.IOTAProcessor
 import org.iota.jota.builder.AddressRequest
 
 object IOTAAddressGenerator extends LazyLogging {

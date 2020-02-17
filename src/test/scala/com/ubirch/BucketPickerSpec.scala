@@ -2,7 +2,7 @@ package com.ubirch
 
 import java.util.Date
 
-import com.ubirch.models.BlockchainSystem.{ BlockchainProcessor, BlockchainType, EthereumType }
+import com.ubirch.services.BlockchainSystem.{ BlockchainProcessor, BlockchainType, EthereumType }
 import com.ubirch.models.{ Response, WithExecutionContext }
 import com.ubirch.services.{ Bucket, BucketPicker }
 import com.ubirch.util.JsonSupport.formats

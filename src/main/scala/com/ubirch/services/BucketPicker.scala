@@ -7,8 +7,8 @@ import com.ubirch.util.JsonSupport
 trait BucketPicker extends TransactionMetrics with ConfigBase {
   a: ExpressKafkaApp[String, String, Unit] =>
 
-  import com.ubirch.models.BlockchainProcessors._
-  import com.ubirch.models.BlockchainSystem._
+  import BlockchainProcessors._
+  import BlockchainSystem._
 
   lazy val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topics").split(",").toSet.filter(_.nonEmpty)
   lazy val blockchainType: BlockchainType = BlockchainType.fromString(conf.getString("blockchainAnchoring.type")).getOrElse(throw new Exception("No Blockchain type set"))
