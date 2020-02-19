@@ -16,7 +16,7 @@ import scala.compat.java8.OptionConverters._
 import scala.concurrent.blocking
 import scala.concurrent.duration._
 import scala.language.postfixOps
-import scala.util.Try
+import scala.util.{ Failure, Success, Try }
 
 object BlockchainSystem {
 
@@ -123,38 +123,48 @@ object BlockchainProcessors {
 
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
-          val maybeResponse = timedReceipt.result.map { receipt =>
 
-            val context = Context(
-              txHash,
-              timedReceipt.elapsed,
-              gasPrice,
-              gasLimit,
-              receipt.getGasUsed,
-              receipt.getCumulativeGasUsed,
-              calcUsage(gasLimit, receipt.getGasUsed)
-            )
+          val maybeResponse = timedReceipt.result match {
+            case Success(result) =>
 
-            gasUsedGauge.labels(blockchainType.value).set(context.gasUsed.toDouble)
-            usedDeltaGauge.labels(blockchainType.value).set(context.usedDelta)
-            txTimeGauge.labels(blockchainType.value).set(context.txHashDuration)
+              result.map { receipt =>
 
-            logger.info(
-              "Got transaction_hash={} time_used={}ns gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
-              context.txHash,
-              context.txHashDuration,
-              context.gasPrice,
-              context.gasLimit,
-              context.gasUsed,
-              context.cumulativeGasUsed,
-              context.usedDelta * 100
-            )
+                val context = Context(
+                  txHash,
+                  timedReceipt.elapsed,
+                  gasPrice,
+                  gasLimit,
+                  receipt.getGasUsed,
+                  receipt.getCumulativeGasUsed,
+                  calcUsage(gasLimit, receipt.getGasUsed)
+                )
 
-            Response.Added(txHash, data, blockchainType.value, networkInfo, networkType)
+                gasUsedGauge.labels(blockchainType.value).set(context.gasUsed.toDouble)
+                usedDeltaGauge.labels(blockchainType.value).set(context.usedDelta)
+                txTimeGauge.labels(blockchainType.value).set(context.txHashDuration)
 
-          }.orElse {
-            logger.error("Timeout for transaction_hash={}", txHash)
-            Option(Response.Timeout(txHash, data, blockchainType.value, networkInfo, networkType))
+                logger.info(
+                  "Got transaction_hash={} time_used={}ns gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
+                  context.txHash,
+                  context.txHashDuration,
+                  context.gasPrice,
+                  context.gasLimit,
+                  context.gasUsed,
+                  context.cumulativeGasUsed,
+                  context.usedDelta * 100
+                )
+
+                Response.Added(txHash, data, blockchainType.value, networkInfo, networkType)
+
+              }.orElse {
+                logger.error("Timeout for transaction_hash={}", txHash)
+                Option(Response.Timeout(txHash, data, blockchainType.value, networkInfo, networkType))
+              }
+
+            case Failure(e) =>
+              logger.error("time_used={}ns", timedReceipt.elapsed)
+              throw e
+
           }
 
           Left(maybeResponse.toList)
@@ -378,14 +388,20 @@ object BlockchainProcessors {
           )
 
           val timedTransactionsAndMessages = Time.time(response.getTransactions.asScala.toList.zip(data))
-          val responses = timedTransactionsAndMessages.result.map { case (tx, data) =>
-            logger.info("Got transaction_hash={} time_used={}ns", tx.getHash, timedTransactionsAndMessages.elapsed)
-            txTimeGauge.labels(blockchainType.value).set(timedTransactionsAndMessages.elapsed)
-
-            Response.Added(tx.getHash, data, blockchainType.value, networkInfo, networkType)
+          val responses = timedTransactionsAndMessages.result match {
+            case Success(result) =>
+              result.map { case (tx, data) =>
+                logger.info("Got transaction_hash={} time_used={}ns", tx.getHash, timedTransactionsAndMessages.elapsed)
+                txTimeGauge.labels(blockchainType.value).set(timedTransactionsAndMessages.elapsed)
+                Response.Added(tx.getHash, data, blockchainType.value, networkInfo, networkType)
+              }
+            case Failure(e) =>
+              logger.error("Error time_used={}ns", timedTransactionsAndMessages.elapsed)
+              throw e
           }
 
           Left(responses)
+
         } catch {
           case e: org.iota.jota.error.ConnectorException =>
             logger.error("status=KO message={} error={} code={} exceptionName={}", data.mkString(", "), e.getMessage, e.getErrorCode, e.getClass.getCanonicalName)
