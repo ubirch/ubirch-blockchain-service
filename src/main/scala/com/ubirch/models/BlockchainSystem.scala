@@ -8,7 +8,7 @@ import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.services.BalanceMonitor
 import com.ubirch.util.Exceptions._
-import com.ubirch.util.{ RunTimeHook, Time }
+import com.ubirch.util.{RunTimeHook, Time}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -18,6 +18,9 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Try
 
+/**
+  * Represents a Blockchain system compounded of a namespace and a processor
+  */
 object BlockchainSystem {
 
   case class Namespace(value: String)
@@ -29,24 +32,32 @@ object BlockchainSystem {
 
 }
 
+/**
+  * Represents a container for the supported blockchain processors
+  */
 object BlockchainProcessors {
   import BlockchainSystem._
 
-  abstract class EthereumBaseProcessor(config: Config, val blockchainType: Namespace)
+  /**
+    * Represent an abstraction for Ethereum-based systems
+    * @param config Represents the configuration object
+    * @param namespace Represents the namespace for the current instance
+    */
+  abstract class EthereumBaseProcessor(config: Config, val namespace: Namespace)
     extends BalanceMonitor
     with BalanceGaugeMetric
-    with EtherumInternalMetrics
+    with EthereumInternalMetrics
     with TimeMetrics
     with RunTimeHook
     with ConfigBase
     with LazyLogging {
 
-    import org.web3j.crypto.{ Credentials, RawTransaction, TransactionEncoder, WalletUtils }
+    import org.web3j.crypto.{Credentials, RawTransaction, TransactionEncoder, WalletUtils}
     import org.web3j.protocol.Web3j
-    import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
-    import org.web3j.protocol.core.{ DefaultBlockParameter, DefaultBlockParameterName }
+    import org.web3j.protocol.core.methods.response.{EthSendTransaction, TransactionReceipt}
+    import org.web3j.protocol.core.{DefaultBlockParameter, DefaultBlockParameterName}
     import org.web3j.protocol.http.HttpService
-    import org.web3j.utils.{ Convert, Numeric }
+    import org.web3j.utils.{Convert, Numeric}
 
     final val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
     final val password = config.getString("password")
@@ -93,8 +104,8 @@ object BlockchainProcessors {
           Left(Nil)
         } else {
 
-          gasPriceGauge.labels(blockchainType.value).set(gasPrice.toDouble)
-          gasLimitGauge.labels(blockchainType.value).set(gasLimit.toDouble)
+          gasPriceGauge.labels(namespace.value).set(gasPrice.toDouble)
+          gasLimitGauge.labels(namespace.value).set(gasLimit.toDouble)
 
           val currentCount = getCount(address)
           val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, currentCount, chainId, credentials)
@@ -115,9 +126,9 @@ object BlockchainProcessors {
               calcUsage(gasLimit, receipt.getGasUsed)
             )
 
-            gasUsedGauge.labels(blockchainType.value).set(context.gasUsed.toDouble)
-            usedDeltaGauge.labels(blockchainType.value).set(context.usedDelta)
-            txTimeGauge.labels(blockchainType.value).set(context.txHashDuration)
+            gasUsedGauge.labels(namespace.value).set(context.gasUsed.toDouble)
+            usedDeltaGauge.labels(namespace.value).set(context.usedDelta)
+            txTimeGauge.labels(namespace.value).set(context.txHashDuration)
 
             logger.info(
               "Got transaction_hash={} time_used={}ns gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
@@ -130,11 +141,11 @@ object BlockchainProcessors {
               context.usedDelta * 100
             )
 
-            Response.Added(txHash, data, blockchainType.value, networkInfo, networkType)
+            Response.Added(txHash, data, namespace.value, networkInfo, networkType)
 
           }.orElse {
             logger.error("Timeout for transaction_hash={}", txHash)
-            Option(Response.Timeout(txHash, data, blockchainType.value, networkInfo, networkType))
+            Option(Response.Timeout(txHash, data, namespace.value, networkInfo, networkType))
           }
 
           Left(maybeResponse.toList)
@@ -259,18 +270,26 @@ object BlockchainProcessors {
     }
 
     def shutdownHook(): Unit = {
-      logger.info("Shutting down blockchain_processor_system={} and balance monitor", blockchainType.value)
+      logger.info("Shutting down blockchain_processor_system={} and balance monitor", namespace.value)
       balanceCancelable.cancel()
       api.shutdown()
     }
 
-    def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels(blockchainType.value).set(balance.toDouble)
+    def registerNewBalance(balance: BigInt): Unit = balanceGauge.labels(namespace.value).set(balance.toDouble)
 
     def queryBalance: (String, BigInt) = balance(address)
 
   }
 
-  class EthereumProcessor(val namespace: Namespace) extends BlockchainProcessor[String]
+  /**
+    * Represents a concrete Ethereum Processor
+    * This processor can be used with all Ethereum-based blockchains:
+    * Ethereum itself and Classic supported out of the box
+    * @param namespace Represents the namespace for the blockchain
+    */
+
+  class EthereumProcessor(val namespace: Namespace)
+    extends BlockchainProcessor[String]
     with ConfigBase
     with LazyLogging {
 
@@ -286,7 +305,15 @@ object BlockchainProcessors {
       }
   }
 
-  class IOTAProcessor(val namespace: Namespace) extends BlockchainProcessor[String] with TimeMetrics with ConfigBase with LazyLogging {
+  /**
+    * Represents a concrete IOTA processor
+    * @param namespace Represents the namespace for the blockchain
+    */
+  class IOTAProcessor(val namespace: Namespace)
+    extends BlockchainProcessor[String]
+    with TimeMetrics
+    with ConfigBase
+    with LazyLogging {
 
     import org.iota.jota.IotaAPI
     import org.iota.jota.model.Transfer

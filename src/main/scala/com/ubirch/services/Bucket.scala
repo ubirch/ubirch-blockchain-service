@@ -1,10 +1,13 @@
 package com.ubirch.services
 
-import com.ubirch.kafka.express.{ ConfigBase, ExpressKafkaApp }
-import com.ubirch.models.{ Response, TransactionMetrics }
+import com.ubirch.kafka.express.{ConfigBase, ExpressKafkaApp}
+import com.ubirch.models.{Response, TransactionMetrics}
 import com.ubirch.util.JsonSupport
-import org.apache.kafka.common.serialization.{ Deserializer, Serializer, StringDeserializer, StringSerializer }
+import org.apache.kafka.common.serialization.{Deserializer, Serializer, StringDeserializer, StringSerializer}
 
+/**
+  * Represents a simple object that keeps track of the config paths
+  */
 object ConfPaths {
 
   val NAMESPACE = "blockchainAnchoring.namespace"
@@ -27,6 +30,9 @@ object ConfPaths {
 
 }
 
+/**
+  * Represent an abstraction for picking up messages to process.
+  */
 trait BucketPicker extends TransactionMetrics with ConfigBase {
   a: ExpressKafkaApp[String, String, Unit] =>
 
@@ -80,6 +86,9 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
 
 }
 
+/**
+  * Represents the "generator" of data, the bucket. It is built upon Kafka Express
+  */
 trait Bucket extends ExpressKafkaApp[String, String, Unit] {
 
   override val keyDeserializer: Deserializer[String] = new StringDeserializer

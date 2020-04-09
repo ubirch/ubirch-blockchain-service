@@ -5,6 +5,9 @@ import com.ubirch.models.BlockchainProcessors.IOTAProcessor
 import com.ubirch.models.BlockchainSystem.Namespace
 import org.iota.jota.builder.AddressRequest
 
+/**
+  * Represents a tool for generating IOTA addresses
+  */
 object IOTAAddressGenerator extends LazyLogging {
 
   def createAddress(seed: String, securityLevel: Int = 2)(processor: IOTAProcessor) = {

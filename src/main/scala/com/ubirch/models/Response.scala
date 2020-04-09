@@ -4,24 +4,34 @@ import java.util.Date
 
 import com.ubirch.util.JsonSupport._
 import org.json4s.JsonDSL._
-import org.json4s.{ CustomSerializer, JObject, MappingException }
+import org.json4s.{CustomSerializer, JObject, MappingException}
 
 import scala.util.control.NonFatal
 
 /**
+  * Represents the object used for in responses.
   * {
-  * 'status':'added',
-  * 'txid':txn_hash_str,
-  * 'message':string,
-  * 'blockchain':blockchain,
-  * 'network_info':networkinfo,
-  * 'network_type':networktype,
-  * 'created':created
+  *  'status':'added',
+  *  'txid':txn_hash_str,
+  *  'message':string,
+  *  'blockchain':blockchain,
+  *  'network_info':networkinfo,
+  *  'network_type':networktype,
+  *  'created':created
   * }
+  * @param status Represents the status of the response
+  * @param txId Represents the transaction id
+  * @param message Represents a message in the response
+  * @param blockchain Represents the blockchain in th response
+  * @param networkInfo Represents the network info
+  * @param networkType Represents the type of network
+  * @param created Represents when the tx was created
   */
-
 case class Response(status: String, txId: String, message: String, blockchain: String, networkInfo: String, networkType: String, created: Date)
 
+/**
+  * Represents a a companion object for the response which contains useful creation functions
+  */
 object Response {
 
   final val STATUS = "status"
@@ -43,6 +53,9 @@ object Response {
 
 }
 
+/**
+  * Represents a customized serializer for the response object
+  */
 class ResponseSerializer extends CustomSerializer[Response](_ =>
 
   ({
