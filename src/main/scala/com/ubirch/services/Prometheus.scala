@@ -10,7 +10,7 @@ trait Prometheus extends RunTimeHook with LazyLogging {
 
   trait PrometheusMetrics extends ConfigBase {
 
-    val port: Int = conf.getInt("blockchainAnchoring.metrics.prometheus.port")
+    val port: Int = conf.getInt(ConfPaths.PROMETHEUS_PORT)
 
     logger.debug("Creating Prometheus Server on Port[{}]", port)
 

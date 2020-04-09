@@ -13,38 +13,18 @@ import com.ubirch.util.{ RunTimeHook, Time }
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
+import scala.concurrent.blocking
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Try
-import scala.concurrent.blocking
 
 object BlockchainSystem {
 
-  sealed trait BlockchainType {
-    val value: String
-  }
+  case class Namespace(value: String)
 
   trait BlockchainProcessor[D] {
-    def blockchainType: BlockchainType
+    def namespace: Namespace
     def process(data: Seq[D]): Either[Seq[Response], Throwable]
-  }
-
-  object BlockchainType {
-    def isValid(value: String): Boolean = fromString(value).isDefined
-    def fromString(value: String): Option[BlockchainType] = options.find(_.value == value)
-    val options: List[BlockchainType] = List(EthereumType, EthereumClassicType, IOTAType)
-  }
-
-  case object EthereumType extends BlockchainType {
-    override val value: String = "ethereum"
-  }
-
-  case object EthereumClassicType extends BlockchainType {
-    override val value: String = "ethereum-classic"
-  }
-
-  case object IOTAType extends BlockchainType {
-    override val value: String = "iota"
   }
 
 }
@@ -52,7 +32,7 @@ object BlockchainSystem {
 object BlockchainProcessors {
   import BlockchainSystem._
 
-  abstract class EthereumBaseProcessor(config: Config, val blockchainType: BlockchainType)
+  abstract class EthereumBaseProcessor(config: Config, val blockchainType: Namespace)
     extends BalanceMonitor
     with BalanceGaugeMetric
     with EtherumInternalMetrics
@@ -63,8 +43,8 @@ object BlockchainProcessors {
 
     import org.web3j.crypto.{ Credentials, RawTransaction, TransactionEncoder, WalletUtils }
     import org.web3j.protocol.Web3j
-    import org.web3j.protocol.core.{ DefaultBlockParameter, DefaultBlockParameterName }
     import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
+    import org.web3j.protocol.core.{ DefaultBlockParameter, DefaultBlockParameterName }
     import org.web3j.protocol.http.HttpService
     import org.web3j.utils.{ Convert, Numeric }
 
@@ -95,7 +75,7 @@ object BlockchainProcessors {
         usedDelta: Double
     )
 
-    logger.info("Basic boot values- url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, chainId)
+    logger.info("Basic boot values - url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, chainId)
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
@@ -290,13 +270,13 @@ object BlockchainProcessors {
 
   }
 
-  trait BlockchainProcessorGlue extends ConfigBase {
+  class EthereumProcessor(val namespace: Namespace) extends BlockchainProcessor[String]
+    with ConfigBase
+    with LazyLogging {
 
-    def blockchainType: BlockchainType
+    final val config: Config = Try(conf.getConfig("blockchainAnchoring." + namespace.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
 
-    val config: Config = Try(conf.getConfig("blockchainAnchoring." + blockchainType.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
-
-    val processor: EthereumBaseProcessor = new EthereumBaseProcessor(config, blockchainType) {}
+    final val processor: EthereumBaseProcessor = new EthereumBaseProcessor(config, namespace) {}
 
     def process(data: Seq[String]): Either[Seq[Response], Throwable] =
       data.toList match {
@@ -304,32 +284,15 @@ object BlockchainProcessors {
         case Nil => Left(Nil)
         case _ => Right(new Exception("Please configure for this blockchain a poll size of 1"))
       }
-
   }
 
-  object EthereumProcessor extends BlockchainProcessor[String]
-    with BlockchainProcessorGlue
-    with ConfigBase
-    with LazyLogging {
-    override def blockchainType: BlockchainType = EthereumType
-  }
-
-  object EthereumClassicProcessor extends BlockchainProcessor[String]
-    with BlockchainProcessorGlue
-    with ConfigBase
-    with LazyLogging {
-    override def blockchainType: BlockchainType = EthereumClassicType
-  }
-
-  object IOTAProcessor extends BlockchainProcessor[String] with TimeMetrics with ConfigBase with LazyLogging {
+  class IOTAProcessor(val namespace: Namespace) extends BlockchainProcessor[String] with TimeMetrics with ConfigBase with LazyLogging {
 
     import org.iota.jota.IotaAPI
     import org.iota.jota.model.Transfer
     import org.iota.jota.utils.TrytesConverter
 
-    override def blockchainType: BlockchainType = IOTAType
-
-    final val config = Try(conf.getConfig("blockchainAnchoring.iota")).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
+    final val config = Try(conf.getConfig("blockchainAnchoring." + namespace.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
     final val urlAsString = config.getString("url")
     final val address = config.getString("toAddress")
     final val addressChecksum = config.getString("toAddressChecksum")
@@ -380,9 +343,9 @@ object BlockchainProcessors {
           val timedTransactionsAndMessages = Time.time(response.getTransactions.asScala.toList.zip(data))
           val responses = timedTransactionsAndMessages.result.map { case (tx, data) =>
             logger.info("Got transaction_hash={} time_used={}ns", tx.getHash, timedTransactionsAndMessages.elapsed)
-            txTimeGauge.labels(blockchainType.value).set(timedTransactionsAndMessages.elapsed)
+            txTimeGauge.labels(namespace.value).set(timedTransactionsAndMessages.elapsed)
 
-            Response.Added(tx.getHash, data, blockchainType.value, networkInfo, networkType)
+            Response.Added(tx.getHash, data, namespace.value, networkInfo, networkType)
           }
 
           Left(responses)

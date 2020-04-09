@@ -5,22 +5,54 @@ import com.ubirch.models.{ Response, TransactionMetrics }
 import com.ubirch.util.JsonSupport
 import org.apache.kafka.common.serialization.{ Deserializer, Serializer, StringDeserializer, StringSerializer }
 
+object ConfPaths {
+
+  val NAMESPACE = "blockchainAnchoring.namespace"
+  val PROCESSOR = "blockchainAnchoring.processor"
+
+  val CONSUMER_TOPICS = "blockchainAnchoring.kafkaConsumer.topics"
+  val CONSUMER_BOOTSTRAP_SERVERS = "blockchainAnchoring.kafkaConsumer.bootstrapServers"
+  val CONSUMER_GROUP_ID = "blockchainAnchoring.kafkaConsumer.groupId"
+  val CONSUMER_MAX_POLL_RECORDS = "blockchainAnchoring.kafkaConsumer.maxPollRecords"
+  val CONSUMER_GRACEFUL_TIMEOUT = "blockchainAnchoring.kafkaConsumer.gracefulTimeout"
+  val METRICS_SUB_NAMESPACE = "blockchainAnchoring.kafkaConsumer.metricsSubNamespace"
+  val CONSUMER_RECONNECT_BACKOFF_MS_CONFIG = "blockchainAnchoring.kafkaConsumer.reconnectBackoffMsConfig"
+  val CONSUMER_RECONNECT_BACKOFF_MAX_MS_CONFIG = "blockchainAnchoring.kafkaConsumer.reconnectBackoffMaxMsConfig"
+
+  val PRODUCER_BOOTSTRAP_SERVERS = "blockchainAnchoring.kafkaProducer.bootstrapServers"
+  val PRODUCER_TOPICS = "blockchainAnchoring.kafkaProducer.topics"
+  val LINGER_MS = "blockchainAnchoring.kafkaProducer.lingerMS"
+
+  val PROMETHEUS_PORT = "blockchainAnchoring.metrics.prometheus.port"
+
+}
+
 trait BucketPicker extends TransactionMetrics with ConfigBase {
   a: ExpressKafkaApp[String, String, Unit] =>
 
   import com.ubirch.models.BlockchainProcessors._
   import com.ubirch.models.BlockchainSystem._
 
-  val producerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaProducer.topics").split(",").toSet.filter(_.nonEmpty)
-  final val blockchainType: BlockchainType = BlockchainType.fromString(conf.getString("blockchainAnchoring.type")).getOrElse(throw new Exception("No Blockchain type set"))
-  final val blockchain = blockchainType match {
-    case EthereumType => EthereumProcessor
-    case EthereumClassicType => EthereumClassicProcessor
-    case IOTAType => IOTAProcessor
-  }
+  final val producerTopics: Set[String] = conf.getString(ConfPaths.PRODUCER_TOPICS).split(",").toSet.filter(_.nonEmpty)
+
+  final val namespace: Namespace = Option(conf.getString(ConfPaths.NAMESPACE))
+    .filter(_.nonEmpty)
+    .map(x => Namespace(x))
+    .getOrElse(throw new Exception("No Blockchain namespace set"))
+
+  final val blockchain: BlockchainProcessor[String] =
+    Option(conf.getString(ConfPaths.PROCESSOR)).filter(_.nonEmpty)
+      .collect {
+        case "com.ubirch.models.BlockchainProcessors.EthereumProcessor" => new EthereumProcessor(namespace)
+        case "com.ubirch.models.BlockchainProcessors.IOTAProcessor" => new IOTAProcessor(namespace)
+        case other => throw new Exception("Processor not supported := " + other)
+      }
+      .getOrElse(throw new Exception("No Blockchain processor set"))
+
   final val flush: Boolean = conf.getBoolean("flush")
 
-  logger.info("Configured blockchain={}", blockchainType.value)
+  logger.info("Configured namespace={}", namespace.value)
+  logger.info("Configured blockchain_processor={}", blockchain.getClass.getCanonicalName)
 
   override val process: Process = Process { consumerRecords =>
 
@@ -29,17 +61,17 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
       blockchain.process(data) match {
         case Left(responses) =>
           if (responses.isEmpty) {
-            errorCounter.labels(blockchainType.value).inc()
+            errorCounter.labels(namespace.value).inc()
             //No need to react to this response as this type of response is intended to be a not critical blockchain exception/error, with is
             //totally OK to just let go and continue with other values.
           } else {
-            successCounter.labels(blockchainType.value).inc()
+            successCounter.labels(namespace.value).inc()
             responses.map { res =>
               producerTopics.map(topic => send(topic, JsonSupport.ToJson[Response](res).toString()))
             }
           }
         case Right(exception) =>
-          errorCounter.labels(blockchainType.value).inc()
+          errorCounter.labels(namespace.value).inc()
           throw exception
       }
     }
@@ -52,18 +84,18 @@ trait Bucket extends ExpressKafkaApp[String, String, Unit] {
 
   override val keyDeserializer: Deserializer[String] = new StringDeserializer
   override val valueDeserializer: Deserializer[String] = new StringDeserializer
-  override val consumerTopics: Set[String] = conf.getString("blockchainAnchoring.kafkaConsumer.topics").split(",").toSet.filter(_.nonEmpty)
+  override val consumerTopics: Set[String] = conf.getString(ConfPaths.CONSUMER_TOPICS).split(",").toSet.filter(_.nonEmpty)
   override val keySerializer: Serializer[String] = new StringSerializer
   override val valueSerializer: Serializer[String] = new StringSerializer
-  override val consumerBootstrapServers: String = conf.getString("blockchainAnchoring.kafkaConsumer.bootstrapServers")
-  override val consumerGroupId: String = conf.getString("blockchainAnchoring.kafkaConsumer.groupId")
-  override val consumerMaxPollRecords: Int = conf.getInt("blockchainAnchoring.kafkaConsumer.maxPollRecords")
-  override val consumerGracefulTimeout: Int = conf.getInt("blockchainAnchoring.kafkaConsumer.gracefulTimeout")
-  override val producerBootstrapServers: String = conf.getString("blockchainAnchoring.kafkaProducer.bootstrapServers")
-  override val metricsSubNamespace: String = conf.getString("blockchainAnchoring.kafkaConsumer.metricsSubNamespace")
-  override val consumerReconnectBackoffMsConfig: Long = conf.getLong("blockchainAnchoring.kafkaConsumer.reconnectBackoffMsConfig")
-  override val consumerReconnectBackoffMaxMsConfig: Long = conf.getLong("blockchainAnchoring.kafkaConsumer.reconnectBackoffMaxMsConfig")
-  override val lingerMs: Int = conf.getInt("blockchainAnchoring.kafkaProducer.lingerMS")
+  override val consumerBootstrapServers: String = conf.getString(ConfPaths.CONSUMER_BOOTSTRAP_SERVERS)
+  override val consumerGroupId: String = conf.getString(ConfPaths.CONSUMER_GROUP_ID)
+  override val consumerMaxPollRecords: Int = conf.getInt(ConfPaths.CONSUMER_MAX_POLL_RECORDS)
+  override val consumerGracefulTimeout: Int = conf.getInt(ConfPaths.CONSUMER_GRACEFUL_TIMEOUT)
+  override val producerBootstrapServers: String = conf.getString(ConfPaths.PRODUCER_BOOTSTRAP_SERVERS)
+  override val metricsSubNamespace: String = conf.getString(ConfPaths.METRICS_SUB_NAMESPACE)
+  override val consumerReconnectBackoffMsConfig: Long = conf.getLong(ConfPaths.CONSUMER_RECONNECT_BACKOFF_MS_CONFIG)
+  override val consumerReconnectBackoffMaxMsConfig: Long = conf.getLong(ConfPaths.CONSUMER_RECONNECT_BACKOFF_MAX_MS_CONFIG)
+  override val lingerMs: Int = conf.getInt(ConfPaths.LINGER_MS)
 
   override val maxTimeAggregationSeconds: Long = 120
 }
