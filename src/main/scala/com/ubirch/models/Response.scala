@@ -4,7 +4,7 @@ import java.util.Date
 
 import com.ubirch.util.JsonSupport._
 import org.json4s.JsonDSL._
-import org.json4s.{CustomSerializer, JObject, MappingException}
+import org.json4s.{ CustomSerializer, JObject, MappingException }
 
 import scala.util.control.NonFatal
 
@@ -27,7 +27,9 @@ import scala.util.control.NonFatal
   * @param networkType Represents the type of network
   * @param created Represents when the tx was created
   */
-case class Response(status: String, txId: String, message: String, blockchain: String, networkInfo: String, networkType: String, created: Date)
+case class Response(status: String, txId: String, message: String, blockchain: String, networkInfo: String, networkType: String, created: Date) {
+  def withCreated(newCreated: Date): Response = copy(created = newCreated)
+}
 
 /**
   * Represents a a companion object for the response which contains useful creation functions

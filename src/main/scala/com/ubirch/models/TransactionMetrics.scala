@@ -1,6 +1,6 @@
 package com.ubirch.models
 
-import io.prometheus.client.{Counter, Gauge}
+import io.prometheus.client.{ Counter, Gauge }
 
 /**
   * Represents Transaction-related Prometheus Metrics

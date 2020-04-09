@@ -1,9 +1,10 @@
 package com.ubirch.services
 
-import com.ubirch.kafka.express.{ConfigBase, ExpressKafkaApp}
-import com.ubirch.models.{Response, TransactionMetrics}
+import com.typesafe.scalalogging.LazyLogging
+import com.ubirch.kafka.express.{ ConfigBase, ExpressKafkaApp }
+import com.ubirch.models.{ Response, TransactionMetrics }
 import com.ubirch.util.JsonSupport
-import org.apache.kafka.common.serialization.{Deserializer, Serializer, StringDeserializer, StringSerializer}
+import org.apache.kafka.common.serialization.{ Deserializer, Serializer, StringDeserializer, StringSerializer }
 
 /**
   * Represents a simple object that keeps track of the config paths
@@ -39,14 +40,7 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
   import com.ubirch.models.BlockchainProcessors._
   import com.ubirch.models.BlockchainSystem._
 
-  final val producerTopics: Set[String] = conf.getString(ConfPaths.PRODUCER_TOPICS).split(",").toSet.filter(_.nonEmpty)
-
-  final val namespace: Namespace = Option(conf.getString(ConfPaths.NAMESPACE))
-    .filter(_.nonEmpty)
-    .map(x => Namespace(x))
-    .getOrElse(throw new Exception("No Blockchain namespace set"))
-
-  final val blockchain: BlockchainProcessor[String] =
+  def getProcessor(namespace: Namespace): BlockchainProcessor[String] = {
     Option(conf.getString(ConfPaths.PROCESSOR)).filter(_.nonEmpty)
       .collect {
         case "com.ubirch.models.BlockchainProcessors.EthereumProcessor" => new EthereumProcessor(namespace)
@@ -54,11 +48,21 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
         case other => throw new Exception("Processor not supported := " + other)
       }
       .getOrElse(throw new Exception("No Blockchain processor set"))
+  }
 
-  final val flush: Boolean = conf.getBoolean("flush")
+  lazy val producerTopics: Set[String] = conf.getString(ConfPaths.PRODUCER_TOPICS).split(",").toSet.filter(_.nonEmpty)
+
+  lazy val namespace: Namespace = Option(conf.getString(ConfPaths.NAMESPACE))
+    .filter(_.nonEmpty)
+    .map(x => Namespace(x))
+    .getOrElse(throw new Exception("No Blockchain namespace set"))
+
+  lazy val blockchain: BlockchainProcessor[String] = getProcessor(namespace)
+
+  lazy val flush: Boolean = conf.getBoolean("flush")
 
   logger.info("Configured namespace={}", namespace.value)
-  logger.info("Configured blockchain_processor={}", blockchain.getClass.getCanonicalName)
+  logger.info("Configured blockchain_processor={}", Option(blockchain.getClass.getCanonicalName).getOrElse("Custom Processor"))
 
   override val process: Process = Process { consumerRecords =>
 

@@ -8,7 +8,7 @@ import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.services.BalanceMonitor
 import com.ubirch.util.Exceptions._
-import com.ubirch.util.{RunTimeHook, Time}
+import com.ubirch.util.{ RunTimeHook, Time }
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -52,12 +52,12 @@ object BlockchainProcessors {
     with ConfigBase
     with LazyLogging {
 
-    import org.web3j.crypto.{Credentials, RawTransaction, TransactionEncoder, WalletUtils}
+    import org.web3j.crypto.{ Credentials, RawTransaction, TransactionEncoder, WalletUtils }
     import org.web3j.protocol.Web3j
-    import org.web3j.protocol.core.methods.response.{EthSendTransaction, TransactionReceipt}
-    import org.web3j.protocol.core.{DefaultBlockParameter, DefaultBlockParameterName}
+    import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
+    import org.web3j.protocol.core.{ DefaultBlockParameter, DefaultBlockParameterName }
     import org.web3j.protocol.http.HttpService
-    import org.web3j.utils.{Convert, Numeric}
+    import org.web3j.utils.{ Convert, Numeric }
 
     final val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
     final val password = config.getString("password")
@@ -319,7 +319,7 @@ object BlockchainProcessors {
     import org.iota.jota.model.Transfer
     import org.iota.jota.utils.TrytesConverter
 
-    final val config = Try(conf.getConfig("blockchainAnchoring." + namespace.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
+    final val config = Try(conf.getConfig("blockchainAnchoring." + namespace.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain=" + namespace.value))
     final val urlAsString = config.getString("url")
     final val address = config.getString("toAddress")
     final val addressChecksum = config.getString("toAddressChecksum")
