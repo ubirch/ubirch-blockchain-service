@@ -9,6 +9,9 @@ import monix.execution.Cancelable
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
+/**
+  * Represents an internal service/component for monitoring the balances
+  */
 trait BalanceMonitor extends WithExecutionContext with LazyLogging {
 
   object Balance {

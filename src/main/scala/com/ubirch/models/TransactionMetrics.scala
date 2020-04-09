@@ -1,7 +1,10 @@
 package com.ubirch.models
 
-import io.prometheus.client.{ Counter, Gauge }
+import io.prometheus.client.{Counter, Gauge}
 
+/**
+  * Represents Transaction-related Prometheus Metrics
+  */
 trait TransactionMetrics {
 
   val successCounter = Counter.build()
@@ -18,6 +21,9 @@ trait TransactionMetrics {
 
 }
 
+/**
+  * Represents Time-related Prometheus Metrics
+  */
 trait TimeMetrics {
 
   val txTimeGauge = Gauge.build()
@@ -28,7 +34,10 @@ trait TimeMetrics {
 
 }
 
-trait EtherumInternalMetrics {
+/**
+  * Represents Ethereum-specific Metrics
+  */
+trait EthereumInternalMetrics {
 
   val gasPriceGauge = Gauge.build()
     .name("gas_price")
