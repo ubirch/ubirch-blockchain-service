@@ -1,5 +1,8 @@
 package com.ubirch.util
 
+/**
+  * Represents a helper for timing executions
+  */
 object Time {
 
   case class Timed[R](result: R, t0: Long, t1: Long) {

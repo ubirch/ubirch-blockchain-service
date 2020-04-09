@@ -2,6 +2,9 @@ package com.ubirch.util
 
 import org.web3j.protocol.core.Response.Error
 
+/**
+  * Represents the principal exceptions for the system
+  */
 object Exceptions {
 
   abstract class BlockchainException(val message: String) extends Exception(message) {

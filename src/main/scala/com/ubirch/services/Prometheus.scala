@@ -6,11 +6,14 @@ import com.ubirch.kafka.metrics.PrometheusMetricsHelper
 import com.ubirch.util.RunTimeHook
 import io.prometheus.client.exporter.HTTPServer
 
+/**
+  * Represents a Prometheus Server.
+  */
 trait Prometheus extends RunTimeHook with LazyLogging {
 
   trait PrometheusMetrics extends ConfigBase {
 
-    val port: Int = conf.getInt("blockchainAnchoring.metrics.prometheus.port")
+    val port: Int = conf.getInt(ConfPaths.PROMETHEUS_PORT)
 
     logger.debug("Creating Prometheus Server on Port[{}]", port)
 
