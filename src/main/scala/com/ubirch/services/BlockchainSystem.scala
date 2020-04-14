@@ -1,4 +1,4 @@
-package com.ubirch.models
+package com.ubirch.services
 
 import java.net.URL
 
@@ -6,7 +6,7 @@ import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
-import com.ubirch.services.BalanceMonitor
+import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }
 import com.ubirch.util.Exceptions._
 import com.ubirch.util.{ RunTimeHook, Time }
 
@@ -66,7 +66,7 @@ object BlockchainProcessors {
     final val bootGasLimit: BigInt = config.getString("gasLimit").toInt
     final val networkInfo = config.getString("networkInfo")
     final val networkType = config.getString("networkType")
-    final val chainId = config.getInt("chainId")
+    final val maybeChainId = Try(config.getLong("chainId")).filter(_ > 0).toOption
     final val url = config.getString("url")
     final val DEFAULT_SLEEP_MILLIS = config.getInt("defaultSleepMillisForReceipt")
     final val MAX_RECEIPT_ATTEMPTS = config.getInt("maxReceiptAttempts")
@@ -86,7 +86,7 @@ object BlockchainProcessors {
         usedDelta: Double
     )
 
-    logger.info("Basic boot values - url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, chainId)
+    logger.info("Basic boot values := url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, maybeChainId.getOrElse("-"))
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
@@ -108,9 +108,10 @@ object BlockchainProcessors {
           gasLimitGauge.labels(namespace.value).set(gasLimit.toDouble)
 
           val currentCount = getCount(address)
-          val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, currentCount, chainId, credentials)
 
-          logger.info("Sending transaction={} with count={}", data, currentCount)
+          val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, currentCount, maybeChainId, credentials)
+
+          logger.info("Sending transaction := data={} count={} chain_id={} hex={} ", data, currentCount, maybeChainId.getOrElse("None"), hexMessage)
 
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
@@ -197,7 +198,7 @@ object BlockchainProcessors {
       (gasPrice, gasLimit)
     }
 
-    def calcUsage(gasLimit: BigInt, gasUsed: BigInt) = gasUsed.toDouble / gasLimit.toDouble
+    def calcUsage(gasLimit: BigInt, gasUsed: BigInt): Double = gasUsed.toDouble / gasLimit.toDouble
 
     def getReceipt(txHash: String, maxRetries: Int = MAX_RECEIPT_ATTEMPTS): Option[TransactionReceipt] = {
 
@@ -242,7 +243,7 @@ object BlockchainProcessors {
       txHash
     }
 
-    def createRawTransactionAsHexMessage(address: String, message: String, gasPrice: BigInt, gasLimit: BigInt, countOrNonce: BigInt, chainId: Int, credentials: Credentials): String = {
+    def createRawTransactionAsHexMessage(address: String, message: String, gasPrice: BigInt, gasLimit: BigInt, countOrNonce: BigInt, maybeChainId: Option[Long], credentials: Credentials): String = {
       val rawTransaction = RawTransaction.createTransaction(
         countOrNonce.bigInteger,
         gasPrice.bigInteger,
@@ -251,10 +252,14 @@ object BlockchainProcessors {
         message
       )
 
-      val signedMessage = TransactionEncoder.signMessage(rawTransaction, chainId, credentials)
-      val hexMessage = Numeric.toHexString(signedMessage)
+      val signedMessage = maybeChainId.map { chainId =>
+        TransactionEncoder.signMessage(rawTransaction, chainId, credentials)
+      }.getOrElse {
+        TransactionEncoder.signMessage(rawTransaction, credentials)
+      }
 
-      hexMessage
+      Numeric.toHexString(signedMessage)
+
     }
 
     def getCount(address: String, blockParameter: DefaultBlockParameter = DefaultBlockParameterName.LATEST): BigInt = {
@@ -391,7 +396,7 @@ object BlockchainProcessors {
       }
     }
 
-    def balance(threshold: Int = 100 /*based on confirmed transactions*/ ) = api.getBalance(threshold, completeAddress)
+    def balance(threshold: Int = 100 /*based on confirmed transactions*/ ): Long = api.getBalance(threshold, completeAddress)
 
   }
 

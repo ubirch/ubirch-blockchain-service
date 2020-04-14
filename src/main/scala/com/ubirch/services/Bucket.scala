@@ -1,6 +1,5 @@
 package com.ubirch.services
 
-import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.{ ConfigBase, ExpressKafkaApp }
 import com.ubirch.models.{ Response, TransactionMetrics }
 import com.ubirch.util.JsonSupport
@@ -37,8 +36,8 @@ object ConfPaths {
 trait BucketPicker extends TransactionMetrics with ConfigBase {
   a: ExpressKafkaApp[String, String, Unit] =>
 
-  import com.ubirch.models.BlockchainProcessors._
-  import com.ubirch.models.BlockchainSystem._
+  import com.ubirch.services.BlockchainProcessors._
+  import com.ubirch.services.BlockchainSystem._
 
   def getProcessor(namespace: Namespace): BlockchainProcessor[String] = {
     Option(conf.getString(ConfPaths.PROCESSOR)).filter(_.nonEmpty)

@@ -1,13 +1,13 @@
-package com.ubirch
+package com.ubirch.services
 
 import java.util.Date
 
 import com.typesafe.config.{ Config, ConfigFactory }
-import com.ubirch.models.BlockchainSystem.{ BlockchainProcessor, Namespace }
-import com.ubirch.models.{ BlockchainSystem, Response, WithExecutionContext }
-import com.ubirch.services.{ Bucket, BucketPicker }
+import com.ubirch.TestBase
+import com.ubirch.models.{ Response, WithExecutionContext }
+import com.ubirch.services.BlockchainSystem.{ BlockchainProcessor, Namespace }
 import com.ubirch.util.JsonSupport.formats
-import com.ubirch.util.{ JsonSupport, PortGiver }
+import com.ubirch.util.PortGiver
 import net.manub.embeddedkafka.EmbeddedKafkaConfig
 
 class BucketPickerSpec extends TestBase {

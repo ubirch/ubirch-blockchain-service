@@ -1,16 +1,17 @@
 package com.ubirch.util
 
 import com.typesafe.scalalogging.LazyLogging
-import com.ubirch.models.BlockchainProcessors.IOTAProcessor
-import com.ubirch.models.BlockchainSystem.Namespace
+import com.ubirch.services.BlockchainProcessors.IOTAProcessor
+import com.ubirch.services.BlockchainSystem.Namespace
 import org.iota.jota.builder.AddressRequest
+import org.iota.jota.dto.response.GetNewAddressResponse
 
 /**
   * Represents a tool for generating IOTA addresses
   */
 object IOTAAddressGenerator extends LazyLogging {
 
-  def createAddress(seed: String, securityLevel: Int = 2)(processor: IOTAProcessor) = {
+  def createAddress(seed: String, securityLevel: Int = 2)(processor: IOTAProcessor): GetNewAddressResponse = {
     try {
       val response = processor.api.generateNewAddresses(
         new AddressRequest.Builder(seed, securityLevel)
