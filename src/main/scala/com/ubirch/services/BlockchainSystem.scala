@@ -30,6 +30,36 @@ object BlockchainSystem {
     def process(data: Seq[D]): Either[Seq[Response], Throwable]
   }
 
+  trait PauseControl {
+
+    case class PauseControlItem(max: Int, current: Int)
+
+    private var pauses: Map[Symbol, PauseControlItem] = Map.empty
+
+    private def pauseItem(name: Symbol, max: Int): PauseControlItem = {
+      val pi = pauses.get(name) match {
+        case Some(value) => value.copy(current = value.current + 1)
+        case None => PauseControlItem(max = max, current = 0)
+      }
+      pauses = pauses.updated(name, pi)
+      pi
+    }
+
+    def pauseFold(name: Symbol, max: Int)(exception: Exception, needForPauseException: NeedForPauseException): Exception = {
+      val pi = pauseItem(name, max)
+      if(pi.current >= max) {
+        pauses.updated(name, PauseControlItem(max = max, current = 0))
+        exception
+      } else {
+        needForPauseException
+      }
+
+    }
+
+  }
+
+
+
 }
 
 /**
@@ -316,6 +346,7 @@ object BlockchainProcessors {
     */
   class IOTAProcessor(val namespace: Namespace)
     extends BlockchainProcessor[String]
+    with PauseControl
     with TimeMetrics
     with ConfigBase
     with LazyLogging {
@@ -384,10 +415,10 @@ object BlockchainProcessors {
         } catch {
           case e: org.iota.jota.error.ConnectorException =>
             logger.error("status=KO message={} error={} code={} exceptionName={}", data.mkString(", "), e.getMessage, e.getErrorCode, e.getClass.getCanonicalName)
-            Right(NeedForPauseException("Jota ConnectorException", e.getMessage))
+            Right(pauseFold('ConnectorException, 30)(e, NeedForPauseException("Jota ConnectorException", e.getMessage)))
           case e: org.iota.jota.error.InternalException =>
             logger.error("status=KO message={} error={} exceptionName={}", data.mkString(", "), e.getMessage, e.getClass.getCanonicalName)
-            Right(NeedForPauseException("Jota InternalException", e.getMessage))
+            Right(pauseFold('InternalException, 30)(e, NeedForPauseException("Jota InternalException", e.getMessage)))
           case e: Exception =>
             logger.error("Something critical happened: ", e)
             Right(e)
