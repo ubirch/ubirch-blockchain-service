@@ -4,7 +4,7 @@ import java.util.concurrent.Executors
 
 import monix.execution.Scheduler
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor }
 
 /**
   * Represents a companion object that serves as singleton for mix-ins

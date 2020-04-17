@@ -1,4 +1,4 @@
-package com.ubirch.models
+package com.ubirch.services
 
 import java.net.URL
 
@@ -6,9 +6,9 @@ import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
-import com.ubirch.services.BalanceMonitor
+import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }
 import com.ubirch.util.Exceptions._
-import com.ubirch.util.{RunTimeHook, Time}
+import com.ubirch.util.{ RunTimeHook, Time }
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -29,6 +29,36 @@ object BlockchainSystem {
     def namespace: Namespace
     def process(data: Seq[D]): Either[Seq[Response], Throwable]
   }
+
+  trait PauseControl {
+
+    case class PauseControlItem(max: Int, current: Int)
+
+    private var pauses: Map[Symbol, PauseControlItem] = Map.empty
+
+    private def pauseItem(name: Symbol, max: Int): PauseControlItem = {
+      val pi = pauses.get(name) match {
+        case Some(value) => value.copy(current = value.current + 1)
+        case None => PauseControlItem(max = max, current = 0)
+      }
+      pauses = pauses.updated(name, pi)
+      pi
+    }
+
+    def pauseFold(name: Symbol, max: Int)(exception: Exception, needForPauseException: NeedForPauseException): Exception = {
+      val pi = pauseItem(name, max)
+      if(pi.current >= max) {
+        pauses.updated(name, PauseControlItem(max = max, current = 0))
+        exception
+      } else {
+        needForPauseException
+      }
+
+    }
+
+  }
+
+
 
 }
 
@@ -52,12 +82,12 @@ object BlockchainProcessors {
     with ConfigBase
     with LazyLogging {
 
-    import org.web3j.crypto.{Credentials, RawTransaction, TransactionEncoder, WalletUtils}
+    import org.web3j.crypto.{ Credentials, RawTransaction, TransactionEncoder, WalletUtils }
     import org.web3j.protocol.Web3j
-    import org.web3j.protocol.core.methods.response.{EthSendTransaction, TransactionReceipt}
-    import org.web3j.protocol.core.{DefaultBlockParameter, DefaultBlockParameterName}
+    import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
+    import org.web3j.protocol.core.{ DefaultBlockParameter, DefaultBlockParameterName }
     import org.web3j.protocol.http.HttpService
-    import org.web3j.utils.{Convert, Numeric}
+    import org.web3j.utils.{ Convert, Numeric }
 
     final val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
     final val password = config.getString("password")
@@ -66,7 +96,7 @@ object BlockchainProcessors {
     final val bootGasLimit: BigInt = config.getString("gasLimit").toInt
     final val networkInfo = config.getString("networkInfo")
     final val networkType = config.getString("networkType")
-    final val chainId = config.getInt("chainId")
+    final val maybeChainId = Try(config.getLong("chainId")).filter(_ > 0).toOption
     final val url = config.getString("url")
     final val DEFAULT_SLEEP_MILLIS = config.getInt("defaultSleepMillisForReceipt")
     final val MAX_RECEIPT_ATTEMPTS = config.getInt("maxReceiptAttempts")
@@ -86,7 +116,7 @@ object BlockchainProcessors {
         usedDelta: Double
     )
 
-    logger.info("Basic boot values - url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, chainId)
+    logger.info("Basic boot values := url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, maybeChainId.getOrElse("-"))
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
@@ -108,9 +138,10 @@ object BlockchainProcessors {
           gasLimitGauge.labels(namespace.value).set(gasLimit.toDouble)
 
           val currentCount = getCount(address)
-          val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, currentCount, chainId, credentials)
 
-          logger.info("Sending transaction={} with count={}", data, currentCount)
+          val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, currentCount, maybeChainId, credentials)
+
+          logger.info("Sending transaction := data={} count={} chain_id={} hex={} ", data, currentCount, maybeChainId.getOrElse("None"), hexMessage)
 
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
@@ -197,7 +228,7 @@ object BlockchainProcessors {
       (gasPrice, gasLimit)
     }
 
-    def calcUsage(gasLimit: BigInt, gasUsed: BigInt) = gasUsed.toDouble / gasLimit.toDouble
+    def calcUsage(gasLimit: BigInt, gasUsed: BigInt): Double = gasUsed.toDouble / gasLimit.toDouble
 
     def getReceipt(txHash: String, maxRetries: Int = MAX_RECEIPT_ATTEMPTS): Option[TransactionReceipt] = {
 
@@ -242,7 +273,7 @@ object BlockchainProcessors {
       txHash
     }
 
-    def createRawTransactionAsHexMessage(address: String, message: String, gasPrice: BigInt, gasLimit: BigInt, countOrNonce: BigInt, chainId: Int, credentials: Credentials): String = {
+    def createRawTransactionAsHexMessage(address: String, message: String, gasPrice: BigInt, gasLimit: BigInt, countOrNonce: BigInt, maybeChainId: Option[Long], credentials: Credentials): String = {
       val rawTransaction = RawTransaction.createTransaction(
         countOrNonce.bigInteger,
         gasPrice.bigInteger,
@@ -251,10 +282,14 @@ object BlockchainProcessors {
         message
       )
 
-      val signedMessage = TransactionEncoder.signMessage(rawTransaction, chainId, credentials)
-      val hexMessage = Numeric.toHexString(signedMessage)
+      val signedMessage = maybeChainId.map { chainId =>
+        TransactionEncoder.signMessage(rawTransaction, chainId, credentials)
+      }.getOrElse {
+        TransactionEncoder.signMessage(rawTransaction, credentials)
+      }
 
-      hexMessage
+      Numeric.toHexString(signedMessage)
+
     }
 
     def getCount(address: String, blockParameter: DefaultBlockParameter = DefaultBlockParameterName.LATEST): BigInt = {
@@ -311,6 +346,7 @@ object BlockchainProcessors {
     */
   class IOTAProcessor(val namespace: Namespace)
     extends BlockchainProcessor[String]
+    with PauseControl
     with TimeMetrics
     with ConfigBase
     with LazyLogging {
@@ -319,7 +355,7 @@ object BlockchainProcessors {
     import org.iota.jota.model.Transfer
     import org.iota.jota.utils.TrytesConverter
 
-    final val config = Try(conf.getConfig("blockchainAnchoring." + namespace.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain"))
+    final val config = Try(conf.getConfig("blockchainAnchoring." + namespace.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain=" + namespace.value))
     final val urlAsString = config.getString("url")
     final val address = config.getString("toAddress")
     final val addressChecksum = config.getString("toAddressChecksum")
@@ -379,10 +415,10 @@ object BlockchainProcessors {
         } catch {
           case e: org.iota.jota.error.ConnectorException =>
             logger.error("status=KO message={} error={} code={} exceptionName={}", data.mkString(", "), e.getMessage, e.getErrorCode, e.getClass.getCanonicalName)
-            Right(NeedForPauseException("Jota ConnectorException", e.getMessage))
+            Right(pauseFold('ConnectorException, 30)(e, NeedForPauseException("Jota ConnectorException", e.getMessage)))
           case e: org.iota.jota.error.InternalException =>
             logger.error("status=KO message={} error={} exceptionName={}", data.mkString(", "), e.getMessage, e.getClass.getCanonicalName)
-            Right(NeedForPauseException("Jota InternalException", e.getMessage))
+            Right(pauseFold('InternalException, 30)(e, NeedForPauseException("Jota InternalException", e.getMessage)))
           case e: Exception =>
             logger.error("Something critical happened: ", e)
             Right(e)
@@ -391,7 +427,7 @@ object BlockchainProcessors {
       }
     }
 
-    def balance(threshold: Int = 100 /*based on confirmed transactions*/ ) = api.getBalance(threshold, completeAddress)
+    def balance(threshold: Int = 100 /*based on confirmed transactions*/ ): Long = api.getBalance(threshold, completeAddress)
 
   }
 
