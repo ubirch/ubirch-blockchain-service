@@ -34,7 +34,6 @@ ENTRYPOINT \
   "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=9020" \
   "-Dconfig.resource=application-${BLOCKCHAIN}-docker.conf" \
   "-Dlogback.configurationFile=logback-docker.xml" \
-  "${EVTL_JAVA_OPTS}" \
   -jar /usr/share/service/main.jar
 
 # Add Maven dependencies (not shaded into the artifact; Docker-cached)
