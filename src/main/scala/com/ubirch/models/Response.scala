@@ -1,8 +1,8 @@
-package com.ubirch.models
+package com.ubirch
+package models
 
 import java.util.Date
 
-import com.ubirch.util.JsonSupport._
 import org.json4s.JsonDSL._
 import org.json4s.{ CustomSerializer, JObject, MappingException }
 
