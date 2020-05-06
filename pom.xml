@@ -80,8 +80,8 @@
 
         <dependency>
             <groupId>com.ubirch</groupId>
-            <artifactId>event-log-kafka</artifactId>
-            <version>1.2.9-SNAPSHOT</version>
+            <artifactId>ubirch-kafka-express</artifactId>
+            <version>1.2.10-SNAPSHOT</version>
         </dependency>
 
         <dependency>

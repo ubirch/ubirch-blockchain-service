@@ -1,8 +1,8 @@
-package com.ubirch.services
+package com.ubirch
+package services
 
 import com.ubirch.kafka.express.{ ConfigBase, ExpressKafkaApp }
 import com.ubirch.models.{ Response, TransactionMetrics }
-import com.ubirch.util.JsonSupport
 import org.apache.kafka.common.serialization.{ Deserializer, Serializer, StringDeserializer, StringSerializer }
 
 /**
@@ -76,7 +76,7 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
           } else {
             successCounter.labels(namespace.value).inc()
             responses.map { res =>
-              producerTopics.map(topic => send(topic, JsonSupport.ToJson[Response](res).toString()))
+              producerTopics.map(topic => send(topic, stringify(toJValue[Response](res))))
             }
           }
         case Right(exception) =>
@@ -108,6 +108,8 @@ trait Bucket extends ExpressKafkaApp[String, String, Unit] {
   override val consumerReconnectBackoffMsConfig: Long = conf.getLong(ConfPaths.CONSUMER_RECONNECT_BACKOFF_MS_CONFIG)
   override val consumerReconnectBackoffMaxMsConfig: Long = conf.getLong(ConfPaths.CONSUMER_RECONNECT_BACKOFF_MAX_MS_CONFIG)
   override val lingerMs: Int = conf.getInt(ConfPaths.LINGER_MS)
+
+  override def prefix: String = "ubirch_identity"
 
   override val maxTimeAggregationSeconds: Long = 120
 }

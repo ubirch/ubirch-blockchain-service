@@ -47,7 +47,7 @@ object BlockchainSystem {
 
     def pauseFold(name: Symbol, max: Int)(exception: Exception, needForPauseException: NeedForPauseException): Exception = {
       val pi = pauseItem(name, max)
-      if(pi.current >= max) {
+      if (pi.current >= max) {
         pauses.updated(name, PauseControlItem(max = max, current = 0))
         exception
       } else {
@@ -57,8 +57,6 @@ object BlockchainSystem {
     }
 
   }
-
-
 
 }
 
