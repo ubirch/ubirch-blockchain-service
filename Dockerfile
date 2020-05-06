@@ -19,7 +19,7 @@ EXPOSE 4321
 # At this moment, they share the same configs.
 ENV BLOCKCHAIN "ethereum"
 
-ENV _JAVA_OPTIONS "-Xms128m -Xmx256m -Djava.awt.headless=true"
+ENV _JAVA_OPTIONS "-Xms256m -Xmx512m -Djava.awt.headless=true"
 
 ENTRYPOINT \
   /usr/bin/java \
