@@ -21,7 +21,8 @@ ENV BLOCKCHAIN "ethereum"
 
 ENTRYPOINT \
   /usr/bin/java \
-  "-XX:MaxRAM=$(( $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) * 70 / 100 ))"  \
+  "-XX:+PrintFlagsFinal -XX:MaxRAM=$(( $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -XX:MaxRAMFraction=1" \
+  "-Djava.awt.headless=true" \
   "-Djava.security.egd=file:/dev/./urandom" \
   "-Djava.rmi.server.hostname=localhost" \
   "-Dcom.sun.management.jmxremote" \
