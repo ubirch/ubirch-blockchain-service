@@ -19,10 +19,9 @@ EXPOSE 4321
 # At this moment, they share the same configs.
 ENV BLOCKCHAIN "ethereum"
 
-ENV _JAVA_OPTIONS "-Xms256m -Xmx512m -Djava.awt.headless=true"
-
 ENTRYPOINT \
   /usr/bin/java \
+  "-XX:MaxRAM=$(( $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) * 100 / 70 ))"
   "-Djava.security.egd=file:/dev/./urandom" \
   "-Djava.rmi.server.hostname=localhost" \
   "-Dcom.sun.management.jmxremote" \
