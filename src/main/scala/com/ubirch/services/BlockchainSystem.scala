@@ -104,6 +104,10 @@ object BlockchainProcessors {
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
+    final val consumptionCalc = new ConsumptionCalc(Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger, bootGasLimit)
+    final val jmxManagement = new BlockchainJmx(namespace, consumptionCalc)
+    jmxManagement.createBean()
+
     case class Context(
         txHash: String,
         txHashDuration: Long,
@@ -112,13 +116,15 @@ object BlockchainProcessors {
         gasUsed: BigInt,
         cumulativeGasUsed: BigInt,
         usedDelta: Double
-    )
+    ) {
+      lazy val transactionFee: BigInt = gasPrice * gasUsed
+    }
 
     logger.info("Basic boot values := url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, maybeChainId.getOrElse("-"))
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
-      val (gasPrice: BigInt, gasLimit: BigInt) = calcGasValues
+      val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues
 
       try {
 
@@ -155,14 +161,16 @@ object BlockchainProcessors {
               calcUsage(gasLimit, receipt.getGasUsed)
             )
 
+            txFeeGauge.labels(namespace.value).set(context.transactionFee.toDouble)
             gasUsedGauge.labels(namespace.value).set(context.gasUsed.toDouble)
             usedDeltaGauge.labels(namespace.value).set(context.usedDelta)
             txTimeGauge.labels(namespace.value).set(context.txHashDuration)
 
             logger.info(
-              "Got transaction_hash={} time_used={}ns gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
+              "Got transaction_hash={} time_used={}ns tx_fee={} gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
               context.txHash,
               context.txHashDuration,
+              context.transactionFee,
               context.gasPrice,
               context.gasLimit,
               context.gasUsed,
@@ -218,12 +226,6 @@ object BlockchainProcessors {
         (Option(true), "All is good")
       }
 
-    }
-
-    def calcGasValues: (BigInt, BigInt) = {
-      val gasPrice: BigInt = Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger
-      val gasLimit: BigInt = bootGasLimit
-      (gasPrice, gasLimit)
     }
 
     def calcUsage(gasLimit: BigInt, gasUsed: BigInt): Double = gasUsed.toDouble / gasLimit.toDouble
@@ -304,6 +306,7 @@ object BlockchainProcessors {
 
     def shutdownHook(): Unit = {
       logger.info("Shutting down blockchain_processor_system={} and balance monitor", namespace.value)
+      jmxManagement.unregisterMBean()
       balanceCancelable.cancel()
       api.shutdown()
     }
