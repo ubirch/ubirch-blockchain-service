@@ -23,14 +23,71 @@ trait BlockchainBean {
   def gasLimit(newGasLimit: String): Unit
 }
 
+case class CalculationPoint(
+    duration: Long,
+    payedFee: BigInt,
+    price: BigInt,
+    limit: BigInt,
+    unit: BigInt,
+    usedDelta: Double
+) {
+
+  def +(other: CalculationPoint) = new CalculationPoint(
+    this.duration + other.duration,
+    this.payedFee + other.payedFee,
+    this.price + other.price,
+    this.limit + other.limit,
+    this.unit + other.unit,
+    this.usedDelta + other.usedDelta
+  )
+}
+
+object CalculationPoint {
+  def zero = new CalculationPoint(0, 0, 0, 0, 0, 0)
+}
+
 class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt) {
 
   @volatile var currentGasPrice: BigInt = bootGasPrice
   @volatile var currentGasLimit: BigInt = bootGasLimit
 
+  private val history = scala.collection.mutable.Queue.empty[CalculationPoint]
+
+  def addPoint(calculationPoint: CalculationPoint): Unit = {
+    val size = history.size
+    if (size == 5) {
+      history.dequeue()
+    }
+    history.enqueue(calculationPoint)
+
+  }
+
+  def clearWithGasPrice(newGasPrice: BigInt): Unit = {
+    history.clear()
+    currentGasPrice = newGasPrice
+  }
+
   def setCurrentGasPrice(newGasPrice: BigInt): Unit = currentGasPrice = newGasPrice
+
   def setCurrentGasLimit(newGasLimit: BigInt): Unit = currentGasLimit = newGasLimit
-  def calcGasValues: (BigInt, BigInt) = (currentGasPrice, currentGasLimit)
+
+  def calcGasValues: (BigInt, BigInt) = {
+    val _history = history
+    val _size = _history.size
+    val global = _history.foldLeft(CalculationPoint.zero)((a, b) => a + b)
+
+    if (_size > 0) {
+      if (_history.headOption.exists(_.duration > 50000000000L)) {
+        val newCurrent = ((global.price / _size) * 110) / 100
+        setCurrentGasPrice(newCurrent)
+      } else {
+        val newCurrent = ((global.price / _size) * 90) / 100
+        setCurrentGasPrice(newCurrent)
+      }
+    }
+
+    (currentGasPrice, currentGasLimit)
+  }
 
 }
 
@@ -48,7 +105,7 @@ class BlockchainJmx(namespace: Namespace, consumptionCalc: ConsumptionCalc) exte
       override def getCurrentGasLimit: String = consumptionCalc.currentGasLimit.toString()
       override def gasPrice(newGasPrice: String): Unit = {
         logger.info("Setting new GasPrice={}", newGasPrice)
-        consumptionCalc.setCurrentGasPrice(new BigInteger(newGasPrice))
+        consumptionCalc.clearWithGasPrice(new BigInteger(newGasPrice))
       }
       override def gasLimit(newGasLimit: String): Unit = {
         logger.info("Setting new GasLimit={}", newGasLimit)

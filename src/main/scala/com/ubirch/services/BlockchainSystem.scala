@@ -3,12 +3,13 @@ package com.ubirch.services
 import java.net.URL
 
 import com.typesafe.config.Config
-import com.typesafe.scalalogging.LazyLogging
+import com.typesafe.scalalogging.{ LazyLogging, Logger }
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }
 import com.ubirch.util.Exceptions._
 import com.ubirch.util.{ RunTimeHook, Time }
+import org.slf4j.LoggerFactory
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -77,8 +78,15 @@ object BlockchainProcessors {
     with EthereumInternalMetrics
     with TimeMetrics
     with RunTimeHook
-    with ConfigBase
-    with LazyLogging {
+    with ConfigBase {
+
+    @transient
+    override protected lazy val logger: Logger = Logger(
+      LoggerFactory.getLogger(
+        getClass.getName.split("\\$")
+          .headOption.getOrElse(getClass.getName)
+      )
+    )
 
     import org.web3j.crypto.{ Credentials, RawTransaction, TransactionEncoder, WalletUtils }
     import org.web3j.protocol.Web3j
@@ -178,6 +186,17 @@ object BlockchainProcessors {
               context.usedDelta * 100
             )
 
+            consumptionCalc.addPoint(
+              CalculationPoint(
+                context.txHashDuration,
+                context.transactionFee,
+                context.gasPrice,
+                context.gasLimit,
+                context.gasUsed,
+                context.usedDelta
+              )
+            )
+
             Response.Added(txHash, data, namespace.value, networkInfo, networkType)
 
           }.orElse {
@@ -248,7 +267,7 @@ object BlockchainProcessors {
           val maybeReceipt = receipt
 
           if (maybeReceipt.isEmpty) {
-            logger.info("receipt_attempt={} sleep_in_millis={} ...", count, sleepInMillis)
+            //logger.info("receipt_attempt={} sleep_in_millis={} ...", count, sleepInMillis)
             val sleep = if (sleepInMillis <= 0) DEFAULT_SLEEP_MILLIS else sleepInMillis
             Thread.sleep(sleep)
             go(count - 1, sleep - 1000)
