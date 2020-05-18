@@ -48,7 +48,7 @@ case class StatsData(
  * @param windowSize Represents how many values will be taken into account for
  *                   calculating the statstics.
  */
-class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, windowSize: Int = 10) {
+class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, windowSize: Int = 10, stepUpPercentage: Double = 110, stepDownPercentage: Double = 30) {
 
   @volatile var currentGasPrice: BigInt = bootGasPrice
   @volatile var currentGasLimit: BigInt = bootGasLimit
@@ -81,8 +81,8 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
 
   def setCurrentGasLimit(newGasLimit: BigInt): Unit = currentGasLimit = newGasLimit
 
-  val stepUp: Double => Double = price => (price * 110) / 100
-  val stepDown: Double => Double = price => (price * 30) / 100
+  val stepUp: Double => Double = price => (price * stepUpPercentage) / 100
+  val stepDown: Double => Double = price => (price * stepUpPercentage) / 100
   val asBigInt: Double => BigInt = double => BigDecimal(double).toBigInt()
   val goUp: Double => BigInt = stepUp andThen asBigInt
   val goDown: Double => BigInt = stepDown andThen asBigInt
