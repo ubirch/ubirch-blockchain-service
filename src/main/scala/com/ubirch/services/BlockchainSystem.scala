@@ -187,7 +187,7 @@ object BlockchainProcessors {
             )
 
             consumptionCalc.addStatistics(
-              CalculationData(
+              StatsData(
                 context.txHashDuration,
                 context.transactionFee,
                 context.gasPrice,
