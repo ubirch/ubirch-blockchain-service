@@ -188,12 +188,11 @@ object BlockchainProcessors {
 
             consumptionCalc.addStatistics(
               StatsData(
-                context.txHashDuration,
-                context.transactionFee,
-                context.gasPrice,
-                context.gasLimit,
-                context.gasUsed,
-                context.usedDelta
+                duration = context.txHashDuration,
+                price = context.gasPrice,
+                limit = context.gasLimit,
+                unit = context.gasUsed,
+                usedDelta = context.usedDelta
               )
             )
 
