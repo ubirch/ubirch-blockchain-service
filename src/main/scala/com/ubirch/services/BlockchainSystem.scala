@@ -175,19 +175,19 @@ object BlockchainProcessors {
             txTimeGauge.labels(namespace.value).set(context.txHashDuration)
 
             logger.info(
-              "Got transaction_hash={} time_used={}ns tx_fee={} gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
-              context.txHash,
+              "Got time_used={}ns tx_fee={} gas_price={} gas_limit={} gas={} cumulative_gas_used={} used_against_limit={}% transaction_hash={} ",
               context.txHashDuration,
               context.transactionFee,
               context.gasPrice,
               context.gasLimit,
               context.gasUsed,
               context.cumulativeGasUsed,
-              context.usedDelta * 100
+              context.usedDelta * 100,
+              context.txHash
             )
 
-            consumptionCalc.addPoint(
-              CalculationPoint(
+            consumptionCalc.addStatistics(
+              CalculationData(
                 context.txHashDuration,
                 context.transactionFee,
                 context.gasPrice,

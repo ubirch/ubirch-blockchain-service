@@ -9,6 +9,7 @@ import com.ubirch.models.WithExecutionContext
 import com.ubirch.services.BlockchainSystem.Namespace
 import javax.management.{ InstanceAlreadyExistsException, InstanceNotFoundException, ObjectName, StandardMBean }
 import monix.execution.Cancelable
+import org.apache.commons.math3.stat.descriptive.{ DescriptiveStatistics, SynchronizedDescriptiveStatistics }
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -23,47 +24,49 @@ trait BlockchainBean {
   def gasLimit(newGasLimit: String): Unit
 }
 
-case class CalculationPoint(
+case class CalculationData(
     duration: Long,
     payedFee: BigInt,
     price: BigInt,
     limit: BigInt,
     unit: BigInt,
     usedDelta: Double
-) {
+)
 
-  def +(other: CalculationPoint) = new CalculationPoint(
-    this.duration + other.duration,
-    this.payedFee + other.payedFee,
-    this.price + other.price,
-    this.limit + other.limit,
-    this.unit + other.unit,
-    this.usedDelta + other.usedDelta
-  )
-}
-
-object CalculationPoint {
-  def zero = new CalculationPoint(0, 0, 0, 0, 0, 0)
-}
-
-class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt) {
+class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, windowSize: Int = 10) {
 
   @volatile var currentGasPrice: BigInt = bootGasPrice
   @volatile var currentGasLimit: BigInt = bootGasLimit
 
-  private val history = scala.collection.mutable.Queue.empty[CalculationPoint]
+  val duration: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
+  val payedFee: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
+  val price: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
+  val limit: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
+  val unit: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
+  val usedDelta: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
 
-  def addPoint(calculationPoint: CalculationPoint): Unit = {
-    val size = history.size
-    if (size == 5) {
-      history.dequeue()
-    }
-    history.enqueue(calculationPoint)
+  duration.setWindowSize(windowSize)
+  payedFee.setWindowSize(windowSize)
+  limit.setWindowSize(windowSize)
+  unit.setWindowSize(windowSize)
+  usedDelta.setWindowSize(windowSize)
 
+  def addStatistics(calculationPoint: CalculationData): Unit = {
+    duration.addValue(calculationPoint.duration)
+    payedFee.addValue(calculationPoint.payedFee.toDouble)
+    price.addValue(calculationPoint.price.toDouble)
+    limit.addValue(calculationPoint.limit.toDouble)
+    unit.addValue(calculationPoint.unit.toDouble)
+    usedDelta.addValue(calculationPoint.usedDelta)
   }
 
   def clearWithGasPrice(newGasPrice: BigInt): Unit = {
-    history.clear()
+    duration.clear()
+    payedFee.clear()
+    price.clear()
+    limit.clear()
+    unit.clear()
+    usedDelta.clear()
     currentGasPrice = newGasPrice
   }
 
@@ -71,18 +74,25 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt) {
 
   def setCurrentGasLimit(newGasLimit: BigInt): Unit = currentGasLimit = newGasLimit
 
-  def calcGasValues: (BigInt, BigInt) = {
-    val _history = history
-    val _size = _history.size
-    val global = _history.foldLeft(CalculationPoint.zero)((a, b) => a + b)
+  val stepUp: Double => Double = price => (price * 110) / 100
+  val stepDown: Double => Double = price => (price * 30) / 100
+  val asBigInt: Double => BigInt = double => BigDecimal(double).toBigInt()
+  val goUp = stepUp andThen asBigInt
+  val goDown = stepDown andThen asBigInt
 
-    if (_size > 0) {
-      if (_history.headOption.exists(_.duration > 50000000000L)) {
-        val newCurrent = ((global.price / _size) * 110) / 100
-        setCurrentGasPrice(newCurrent)
+  def calcGasValues: (BigInt, BigInt) = {
+    val td = 50000000000L.toDouble
+    val tu = .85
+    val dn = duration.getN
+
+    if (dn > 0) {
+      val gpm = price.getGeometricMean
+      val d = duration.getElement(dn.toInt - 1)
+
+      if ((d > td) && usedDelta.getGeometricMean <= tu) {
+        setCurrentGasPrice(goUp(gpm))
       } else {
-        val newCurrent = ((global.price / _size) * 90) / 100
-        setCurrentGasPrice(newCurrent)
+        setCurrentGasPrice(goDown(gpm))
       }
     }
 
