@@ -21,7 +21,9 @@ trait BalanceMonitor extends WithExecutionContext with LazyLogging {
     private def action(): Unit = try {
       val (address, newBalance) = queryBalance
       registerNewBalance(newBalance)
-      logger.info("local_balance={} incoming_balance={} address={}", balance.get(), newBalance, address)
+      val curr = balance.get()
+      val diff = curr - newBalance
+      logger.info("local_balance={} incoming_balance={} diff={} address={}", curr, newBalance, diff, address)
       balance.set(newBalance)
     } catch {
       case e: Exception =>

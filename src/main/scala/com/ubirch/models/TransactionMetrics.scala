@@ -39,6 +39,12 @@ trait TimeMetrics {
   */
 trait EthereumInternalMetrics {
 
+  val txFeeGauge = Gauge.build()
+    .name("tx_fee")
+    .help("Represents the transaction fee")
+    .labelNames("service")
+    .register()
+
   val gasPriceGauge = Gauge.build()
     .name("gas_price")
     .help("Represents the gas price")
