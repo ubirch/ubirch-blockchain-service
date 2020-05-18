@@ -35,12 +35,12 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
   @volatile var currentGasLimit: BigInt = bootGasLimit
 
   val duration: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
-  val price: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
-  val limit: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
-  val usedDelta: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
-
   duration.setWindowSize(windowSize)
+  val price: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
+  price.setWindowSize(windowSize)
+  val limit: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
   limit.setWindowSize(windowSize)
+  val usedDelta: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
   usedDelta.setWindowSize(windowSize)
 
   def addStatistics(calculationPoint: StatsData): Unit = {
@@ -68,9 +68,7 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
   val goUp: Double => BigInt = stepUp andThen asBigInt
   val goDown: Double => BigInt = stepDown andThen asBigInt
 
-  def calcGasValues: (BigInt, BigInt) = {
-    val td = 50000000000L.toDouble
-    val tu = .85
+  def calcGasValues(td: Double = 50000000000L.toDouble, tu: Double = .85): (BigInt, BigInt) = {
     val dn = duration.getN
 
     if (dn > 0) {

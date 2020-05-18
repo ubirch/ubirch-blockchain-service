@@ -132,7 +132,7 @@ object BlockchainProcessors {
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
-      val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues
+      val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues()
 
       try {
 
