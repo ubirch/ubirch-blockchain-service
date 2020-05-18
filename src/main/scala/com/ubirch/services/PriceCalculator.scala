@@ -82,7 +82,7 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
   def setCurrentGasLimit(newGasLimit: BigInt): Unit = currentGasLimit = newGasLimit
 
   val stepUp: Double => Double = price => (price * stepUpPercentage) / 100
-  val stepDown: Double => Double = price => (price * stepUpPercentage) / 100
+  val stepDown: Double => Double = price => (price * stepDownPercentage) / 100
   val asBigInt: Double => BigInt = double => BigDecimal(double).toBigInt()
   val goUp: Double => BigInt = stepUp andThen asBigInt
   val goDown: Double => BigInt = stepDown andThen asBigInt
