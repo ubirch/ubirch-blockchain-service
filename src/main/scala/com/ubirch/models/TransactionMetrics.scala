@@ -69,5 +69,11 @@ trait EthereumInternalMetrics {
     .labelNames("service")
     .register()
 
+  val timeoutsCounter = Counter.build()
+    .name("timeouts")
+    .help("Represents the timeouts that have occurred")
+    .labelNames("service")
+    .register()
+
 }
 

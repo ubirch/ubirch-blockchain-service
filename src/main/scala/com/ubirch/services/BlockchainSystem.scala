@@ -169,6 +169,8 @@ object BlockchainProcessors {
               .addGasPrice(gasPrice)
               .addGasLimit(gasLimit)
 
+            timeoutsCounter.labels(namespace.value).inc()
+
             logger.error("Timeout :={}", context.toString)
             Response.Timeout(txHash, data, namespace.value, networkInfo, networkType)
 
