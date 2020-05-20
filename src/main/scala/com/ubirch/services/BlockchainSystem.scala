@@ -3,12 +3,13 @@ package com.ubirch.services
 import java.net.URL
 
 import com.typesafe.config.Config
-import com.typesafe.scalalogging.LazyLogging
+import com.typesafe.scalalogging.{ LazyLogging, Logger }
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }
 import com.ubirch.util.Exceptions._
 import com.ubirch.util.{ RunTimeHook, Time }
+import org.slf4j.LoggerFactory
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -77,9 +78,17 @@ object BlockchainProcessors {
     with EthereumInternalMetrics
     with TimeMetrics
     with RunTimeHook
-    with ConfigBase
-    with LazyLogging {
+    with ConfigBase {
 
+    @transient
+    override protected lazy val logger: Logger = Logger(
+      LoggerFactory.getLogger(
+        getClass.getName.split("\\$")
+          .headOption.getOrElse(getClass.getName)
+      )
+    )
+
+    import EthereumBaseProcessor._
     import org.web3j.crypto.{ Credentials, RawTransaction, TransactionEncoder, WalletUtils }
     import org.web3j.protocol.Web3j
     import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
@@ -99,26 +108,31 @@ object BlockchainProcessors {
     final val DEFAULT_SLEEP_MILLIS = config.getInt("defaultSleepMillisForReceipt")
     final val MAX_RECEIPT_ATTEMPTS = config.getInt("maxReceiptAttempts")
     final val checkBalanceEveryInSeconds = config.getInt("checkBalanceEveryInSeconds")
+    final val windowSize: Int = config.getInt("windowSize")
+    final val stepUpPercentage: Double = config.getDouble("stepUpPercentage")
+    final val stepDownPercentage: Double = config.getDouble("stepDownPercentage")
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
-    case class Context(
-        txHash: String,
-        txHashDuration: Long,
-        gasPrice: BigInt,
-        gasLimit: BigInt,
-        gasUsed: BigInt,
-        cumulativeGasUsed: BigInt,
-        usedDelta: Double
+    final val consumptionCalc = new ConsumptionCalc(
+      Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
+      bootGasLimit,
+      windowSize,
+      stepUpPercentage,
+      stepDownPercentage
     )
+    final val jmxManagement = new BlockchainJmx(namespace, consumptionCalc)
+    jmxManagement.createBean()
 
     logger.info("Basic boot values := url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, maybeChainId.getOrElse("-"))
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
-      val (gasPrice: BigInt, gasLimit: BigInt) = calcGasValues
+      val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues()
+
+      var context = Context.empty
 
       try {
 
@@ -143,41 +157,38 @@ object BlockchainProcessors {
 
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
-          val maybeResponse = timedReceipt.result.map { receipt =>
+          val response = timedReceipt.result.map { receipt =>
 
-            val context = Context(
-              txHash,
-              timedReceipt.elapsed,
-              gasPrice,
-              gasLimit,
-              receipt.getGasUsed,
-              receipt.getCumulativeGasUsed,
-              calcUsage(gasLimit, receipt.getGasUsed)
-            )
+            context = context
+              .addTxHash(txHash)
+              .addTxHashDuration(timedReceipt.elapsed)
+              .addGasPrice(gasPrice)
+              .addGasLimit(gasLimit)
+              .addGasUsed(receipt.getGasUsed)
+              .addCumulativeGasUsed(receipt.getCumulativeGasUsed)
 
-            gasUsedGauge.labels(namespace.value).set(context.gasUsed.toDouble)
-            usedDeltaGauge.labels(namespace.value).set(context.usedDelta)
-            txTimeGauge.labels(namespace.value).set(context.txHashDuration)
-
-            logger.info(
-              "Got transaction_hash={} time_used={}ns gas_price={} gas_limit={} gas_used={} cumulative_gas_used={} used_against_limit={}%",
-              context.txHash,
-              context.txHashDuration,
-              context.gasPrice,
-              context.gasLimit,
-              context.gasUsed,
-              context.cumulativeGasUsed,
-              context.usedDelta * 100
-            )
-
+            logger.info("Got :={}", context.toString)
             Response.Added(txHash, data, namespace.value, networkInfo, networkType)
 
-          }.orElse {
-            logger.error("Timeout for transaction_hash={}", txHash)
-            Option(Response.Timeout(txHash, data, namespace.value, networkInfo, networkType))
+          }.getOrElse {
+
+            context = context
+              .addTxHash(txHash)
+              .addTxHashDuration(timedReceipt.elapsed)
+              .addGasPrice(gasPrice)
+              .addGasLimit(gasLimit)
+
+            timeoutsCounter.labels(namespace.value).inc()
+
+            logger.error("Timeout :={}", context.toString)
+            Response.Timeout(txHash, data, namespace.value, networkInfo, networkType)
+
           }
 
-          Left(maybeResponse.toList)
+          consumptionCalc.addStatistics(context.stats)
+
+          Left(List(response))
+
         }
 
       } catch {
@@ -202,6 +213,12 @@ object BlockchainProcessors {
         case e: Exception =>
           logger.error("Something critical happened: ", e)
           Right(e)
+      } finally {
+
+        txFeeGauge.labels(namespace.value).set(context.transactionFee.toDouble)
+        gasUsedGauge.labels(namespace.value).set(context.gasUsed.toDouble)
+        usedDeltaGauge.labels(namespace.value).set(context.usedDelta)
+        txTimeGauge.labels(namespace.value).set(context.txHashDuration)
       }
 
     }
@@ -219,14 +236,6 @@ object BlockchainProcessors {
       }
 
     }
-
-    def calcGasValues: (BigInt, BigInt) = {
-      val gasPrice: BigInt = Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger
-      val gasLimit: BigInt = bootGasLimit
-      (gasPrice, gasLimit)
-    }
-
-    def calcUsage(gasLimit: BigInt, gasUsed: BigInt): Double = gasUsed.toDouble / gasLimit.toDouble
 
     def getReceipt(txHash: String, maxRetries: Int = MAX_RECEIPT_ATTEMPTS): Option[TransactionReceipt] = {
 
@@ -246,7 +255,7 @@ object BlockchainProcessors {
           val maybeReceipt = receipt
 
           if (maybeReceipt.isEmpty) {
-            logger.info("receipt_attempt={} sleep_in_millis={} ...", count, sleepInMillis)
+            //logger.info("receipt_attempt={} sleep_in_millis={} ...", count, sleepInMillis)
             val sleep = if (sleepInMillis <= 0) DEFAULT_SLEEP_MILLIS else sleepInMillis
             Thread.sleep(sleep)
             go(count - 1, sleep - 1000)
@@ -304,6 +313,7 @@ object BlockchainProcessors {
 
     def shutdownHook(): Unit = {
       logger.info("Shutting down blockchain_processor_system={} and balance monitor", namespace.value)
+      jmxManagement.unregisterMBean()
       balanceCancelable.cancel()
       api.shutdown()
     }
@@ -312,6 +322,46 @@ object BlockchainProcessors {
 
     def queryBalance: (String, BigInt) = balance(address)
 
+  }
+
+  object EthereumBaseProcessor {
+    case class Context(
+        txHash: String,
+        txHashDuration: Long,
+        gasPrice: BigInt,
+        gasLimit: BigInt,
+        gasUsed: BigInt,
+        cumulativeGasUsed: BigInt
+    ) {
+
+      def addTxHash(newTxHash: String): Context = this.copy(txHash = newTxHash)
+      def addTxHashDuration(newTxHashDuration: Long): Context = this.copy(txHashDuration = newTxHashDuration)
+      def addGasPrice(newGasPrice: BigInt): Context = this.copy(gasPrice = newGasPrice)
+      def addGasLimit(newGasLimit: BigInt): Context = this.copy(gasLimit = newGasLimit)
+      def addGasUsed(newGasUsed: BigInt): Context = this.copy(gasUsed = newGasUsed)
+      def addCumulativeGasUsed(newCumulativeGasUsed: BigInt): Context = this.copy(cumulativeGasUsed = newCumulativeGasUsed)
+
+      def transactionFee: BigInt = gasPrice * gasUsed
+      def usedDelta: Double = gasUsed.toDouble / gasLimit.toDouble
+
+      def stats: StatsData = {
+        StatsData(
+          duration = txHashDuration,
+          price = gasPrice,
+          limit = gasLimit,
+          unit = gasUsed,
+          usedDelta = usedDelta
+        )
+      }
+
+      override def toString: String = {
+        s"time_used=${txHashDuration}ns tx_fee=$transactionFee gas_price=$gasPrice gas_limit=$gasLimit gas=$gasUsed cumulative_gas_used=$cumulativeGasUsed used_against_limit=${usedDelta * 100}% transaction_hash=$txHash"
+      }
+    }
+
+    object Context {
+      def empty: Context = new Context("", 0, 0, 0, 0, 0)
+    }
   }
 
   /**
