@@ -87,15 +87,21 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
   val goUp: Double => BigInt = stepUp andThen asBigInt
   val goDown: Double => BigInt = stepDown andThen asBigInt
 
+  private var lg: Double = -1
+
   def calcGasValues(td: Double = 50000000000L.toDouble, tu: Double = .85): (BigInt, BigInt) = {
-    val dn = duration.getN
+    val size = (duration.getN - 1).toInt
 
-    if (dn > 0) {
+    if (size > 0) {
       val gpm = price.getGeometricMean
-      val d = duration.getElement(dn.toInt - 1)
+      val dn = duration.getElement(size)
 
-      if ((d > td) && usedDelta.getGeometricMean <= tu) {
+      if ((dn > td) && usedDelta.getGeometricMean <= tu) {
+        val pn_1 = price.getElement(size - 1)
+        lg = pn_1
         setCurrentGasPrice(goUp(gpm))
+      } else if(lg > -1) {
+        setCurrentGasPrice(asBigInt(lg))
       } else {
         setCurrentGasPrice(goDown(gpm))
       }

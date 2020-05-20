@@ -174,6 +174,8 @@ object BlockchainProcessors {
 
           }
 
+          consumptionCalc.addStatistics(context.stats)
+
           Left(List(response))
 
         }
@@ -202,7 +204,6 @@ object BlockchainProcessors {
           Right(e)
       } finally {
 
-        consumptionCalc.addStatistics(context.stats)
         txFeeGauge.labels(namespace.value).set(context.transactionFee.toDouble)
         gasUsedGauge.labels(namespace.value).set(context.gasUsed.toDouble)
         usedDeltaGauge.labels(namespace.value).set(context.usedDelta)
