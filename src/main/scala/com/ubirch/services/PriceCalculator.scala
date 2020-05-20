@@ -11,8 +11,8 @@ import org.apache.commons.math3.stat.descriptive.{ DescriptiveStatistics, Synchr
 import scala.language.postfixOps
 
 /**
- * Represents a basic interface/trait for our blockchain jmx control
- */
+  * Represents a basic interface/trait for our blockchain jmx control
+  */
 trait BlockchainBean {
   def getBootGasPrice: String
   def getBootGasLimit: String
@@ -24,13 +24,13 @@ trait BlockchainBean {
 }
 
 /**
- * Represents a data structure that allows easy packing for the basic
- * statistics points
- * @param duration
- * @param price
- * @param limit
- * @param usedDelta
- */
+  * Represents a data structure that allows easy packing for the basic
+  * statistics points
+  * @param duration Represents the duration in nano seconds of the tx.
+  * @param price Represents the transaction fee
+  * @param limit Represents the max limit to respect
+  * @param usedDelta represents the % of the unit price and the limit
+  */
 case class StatsData(
     duration: Long,
     price: BigInt,
@@ -40,14 +40,14 @@ case class StatsData(
 )
 
 /**
- * Represents a calculator aimed calculating the next possible
- * gas price
- *
- * @param bootGasPrice Represents the gas price with which the system starts off
- * @param bootGasLimit Represents the gas limit with with the system starts off
- * @param windowSize Represents how many values will be taken into account for
- *                   calculating the statstics.
- */
+  * Represents a calculator aimed calculating the next possible
+  * gas price
+  *
+  * @param bootGasPrice Represents the gas price with which the system starts off
+  * @param bootGasLimit Represents the gas limit with with the system starts off
+  * @param windowSize Represents how many values will be taken into account for
+  *                   calculating the statistics.
+  */
 class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, windowSize: Int = 10, stepUpPercentage: Double = 110, stepDownPercentage: Double = 30) {
 
   @volatile var currentGasPrice: BigInt = bootGasPrice
@@ -107,10 +107,10 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
 }
 
 /**
- * Represents the JMX Implementation for our system.
- * @param namespace Represents the namespace for the JMX, which is the ethereum name
- * @param consumptionCalc Represents an implementation of the consumption calculator.
- */
+  * Represents the JMX Implementation for our system.
+  * @param namespace Represents the namespace for the JMX, which is the ethereum name
+  * @param consumptionCalc Represents an implementation of the consumption calculator.
+  */
 class BlockchainJmx(namespace: Namespace, consumptionCalc: ConsumptionCalc) extends LazyLogging {
 
   private val mBeanServer = ManagementFactory.getPlatformMBeanServer
