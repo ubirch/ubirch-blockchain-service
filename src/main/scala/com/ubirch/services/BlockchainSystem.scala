@@ -123,6 +123,8 @@ object BlockchainProcessors {
 
       val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues()
 
+      var context = Context.empty
+
       try {
 
         val (isOK, verificationMessage) = verifyBalance(gasPrice)
@@ -146,9 +148,9 @@ object BlockchainProcessors {
 
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
-          val (context, response) = timedReceipt.result.map { receipt =>
+          val response = timedReceipt.result.map { receipt =>
 
-            val context = Context.empty
+            context = context
               .addTxHash(txHash)
               .addTxHashDuration(timedReceipt.elapsed)
               .addGasPrice(gasPrice)
@@ -157,27 +159,20 @@ object BlockchainProcessors {
               .addCumulativeGasUsed(receipt.getCumulativeGasUsed)
 
             logger.info("Got :={}", context.toString)
-            (context, Response.Added(txHash, data, namespace.value, networkInfo, networkType))
+            Response.Added(txHash, data, namespace.value, networkInfo, networkType)
 
           }.getOrElse {
 
-            val context = Context.empty
+            context = context
               .addTxHash(txHash)
               .addTxHashDuration(timedReceipt.elapsed)
               .addGasPrice(gasPrice)
               .addGasLimit(gasLimit)
 
             logger.error("Timeout :={}", context.toString)
-            (context, Response.Timeout(txHash, data, namespace.value, networkInfo, networkType))
+            Response.Timeout(txHash, data, namespace.value, networkInfo, networkType)
 
           }
-
-          consumptionCalc.addStatistics(context.stats)
-
-          txFeeGauge.labels(namespace.value).set(context.transactionFee.toDouble)
-          gasUsedGauge.labels(namespace.value).set(context.gasUsed.toDouble)
-          usedDeltaGauge.labels(namespace.value).set(context.usedDelta)
-          txTimeGauge.labels(namespace.value).set(context.txHashDuration)
 
           Left(List(response))
 
@@ -205,6 +200,13 @@ object BlockchainProcessors {
         case e: Exception =>
           logger.error("Something critical happened: ", e)
           Right(e)
+      } finally {
+
+        consumptionCalc.addStatistics(context.stats)
+        txFeeGauge.labels(namespace.value).set(context.transactionFee.toDouble)
+        gasUsedGauge.labels(namespace.value).set(context.gasUsed.toDouble)
+        usedDeltaGauge.labels(namespace.value).set(context.usedDelta)
+        txTimeGauge.labels(namespace.value).set(context.txHashDuration)
       }
 
     }
@@ -346,7 +348,7 @@ object BlockchainProcessors {
     }
 
     object Context {
-      def empty: Context = new Context("", -1, -1, -1, -1, -1)
+      def empty: Context = new Context("", 0, 0, 0, 0, 0)
     }
   }
 
