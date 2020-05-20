@@ -108,12 +108,21 @@ object BlockchainProcessors {
     final val DEFAULT_SLEEP_MILLIS = config.getInt("defaultSleepMillisForReceipt")
     final val MAX_RECEIPT_ATTEMPTS = config.getInt("maxReceiptAttempts")
     final val checkBalanceEveryInSeconds = config.getInt("checkBalanceEveryInSeconds")
+    final val windowSize: Int = config.getInt("windowSize")
+    final val stepUpPercentage: Double = config.getDouble("stepUpPercentage")
+    final val stepDownPercentage: Double = config.getDouble("stepDownPercentage")
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
-    final val consumptionCalc = new ConsumptionCalc(Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger, bootGasLimit)
+    final val consumptionCalc = new ConsumptionCalc(
+      Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
+      bootGasLimit,
+      windowSize,
+      stepUpPercentage,
+      stepDownPercentage
+    )
     final val jmxManagement = new BlockchainJmx(namespace, consumptionCalc)
     jmxManagement.createBean()
 
