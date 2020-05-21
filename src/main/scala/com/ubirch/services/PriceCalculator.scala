@@ -100,7 +100,7 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
         val pn_1 = price.getElement(size - 1)
         lg = pn_1
         setCurrentGasPrice(goUp(gpm))
-      } else if(lg > -1) {
+      } else if (lg > -1) {
         setCurrentGasPrice(asBigInt(lg))
       } else {
         setCurrentGasPrice(goDown(gpm))

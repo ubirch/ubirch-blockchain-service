@@ -111,6 +111,7 @@ object BlockchainProcessors {
     final val windowSize: Int = config.getInt("windowSize")
     final val stepUpPercentage: Double = config.getDouble("stepUpPercentage")
     final val stepDownPercentage: Double = config.getDouble("stepDownPercentage")
+    final val durationLimit: Double = config.getDouble("stepDownPercentage")
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
@@ -126,11 +127,18 @@ object BlockchainProcessors {
     final val jmxManagement = new BlockchainJmx(namespace, consumptionCalc)
     jmxManagement.createBean()
 
-    logger.info("Basic boot values := url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, maybeChainId.getOrElse("-"))
+    logger.info(
+      "Basic boot values := url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}",
+      url,
+      address,
+      bootGasPrice,
+      bootGasLimit,
+      maybeChainId.getOrElse("-")
+    )
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
-      val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues()
+      val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues(durationLimit)
 
       var context = Context.empty
 
@@ -167,7 +175,7 @@ object BlockchainProcessors {
               .addGasUsed(receipt.getGasUsed)
               .addCumulativeGasUsed(receipt.getCumulativeGasUsed)
 
-            logger.info("Got :={}", context.toString)
+            logger.info("status=OK {}", context.toString)
             Response.Added(txHash, data, namespace.value, networkInfo, networkType)
 
           }.getOrElse {
@@ -180,7 +188,7 @@ object BlockchainProcessors {
 
             timeoutsCounter.labels(namespace.value).inc()
 
-            logger.error("Timeout :={}", context.toString)
+            logger.error("status=KO[timeout] {}", context.toString)
             Response.Timeout(txHash, data, namespace.value, networkInfo, networkType)
 
           }
