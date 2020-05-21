@@ -100,7 +100,7 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
         lg = pn_1
         setCurrentGasPrice(stepUp(gpm))
       } else if (lg > -1) {
-        setCurrentGasPrice(asBigInt(lg))
+        setCurrentGasPrice(asBigInt(calcPer(70)(lg)))
       } else {
         setCurrentGasPrice(stepDown(gpm))
       }
