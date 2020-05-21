@@ -111,7 +111,7 @@ object BlockchainProcessors {
     final val windowSize: Int = config.getInt("windowSize")
     final val stepUpPercentage: Double = config.getDouble("stepUpPercentage")
     final val stepDownPercentage: Double = config.getDouble("stepDownPercentage")
-    final val durationLimit: Double = config.getDouble("stepDownPercentage")
+    final val durationLimit: Double = config.getDouble("durationLimit")
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
@@ -128,12 +128,26 @@ object BlockchainProcessors {
     jmxManagement.createBean()
 
     logger.info(
-      "Basic boot values := url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}",
+      "Basic boot values := " +
+        "url={} " +
+        "address={} " +
+        "boot_gas_price={} " +
+        "boot_gas_limit={} " +
+        "chain_id={}" +
+        "check_balance_every_in_seconds={}" +
+        "window_size={}" +
+        "step_up_percentage={}" +
+        "step_down_percentage={}" +
+        "duration_limit={}ns",
       url,
       address,
       bootGasPrice,
       bootGasLimit,
-      maybeChainId.getOrElse("-")
+      maybeChainId.getOrElse("-"),
+      checkBalanceEveryInSeconds,
+      windowSize,
+      stepDownPercentage,
+      durationLimit
     )
 
     def process(data: String): Either[Seq[Response], Throwable] = {
