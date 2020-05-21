@@ -146,6 +146,7 @@ object BlockchainProcessors {
       maybeChainId.getOrElse("-"),
       checkBalanceEveryInSeconds,
       windowSize,
+      stepUpPercentage,
       stepDownPercentage,
       durationLimit
     )
