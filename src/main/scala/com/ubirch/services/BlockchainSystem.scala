@@ -133,11 +133,11 @@ object BlockchainProcessors {
         "address={} " +
         "boot_gas_price={} " +
         "boot_gas_limit={} " +
-        "chain_id={}" +
-        "check_balance_every_in_seconds={}" +
-        "window_size={}" +
-        "step_up_percentage={}" +
-        "step_down_percentage={}" +
+        "chain_id={} " +
+        "check_balance_every_in_seconds={} " +
+        "window_size={} " +
+        "step_up_percentage={} " +
+        "step_down_percentage={} " +
         "duration_limit={}ns",
       url,
       address,

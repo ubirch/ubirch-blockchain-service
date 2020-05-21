@@ -81,11 +81,10 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
 
   def setCurrentGasLimit(newGasLimit: BigInt): Unit = currentGasLimit = newGasLimit
 
-  val stepUp: Double => Double = price => (price * stepUpPercentage) / 100
-  val stepDown: Double => Double = price => (price * stepDownPercentage) / 100
+  val calcPer: Double => Double => Double = percentage => price => (price * percentage) / 100
   val asBigInt: Double => BigInt = double => BigDecimal(double).toBigInt()
-  val goUp: Double => BigInt = stepUp andThen asBigInt
-  val goDown: Double => BigInt = stepDown andThen asBigInt
+  val stepUp: Double => BigInt = calcPer(stepUpPercentage) andThen asBigInt
+  val stepDown: Double => BigInt = calcPer(stepDownPercentage) andThen asBigInt
 
   private var lg: Double = -1
 
@@ -99,11 +98,11 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
       if ((dn > td) && usedDelta.getGeometricMean <= tu) {
         val pn_1 = price.getElement(size - 1)
         lg = pn_1
-        setCurrentGasPrice(goUp(gpm))
+        setCurrentGasPrice(stepUp(gpm))
       } else if (lg > -1) {
-        setCurrentGasPrice(asBigInt(lg))
+        setCurrentGasPrice(asBigInt(calcPer(70)(lg)))
       } else {
-        setCurrentGasPrice(goDown(gpm))
+        setCurrentGasPrice(stepDown(gpm))
       }
     }
 
