@@ -48,7 +48,15 @@ case class StatsData(
   * @param windowSize Represents how many values will be taken into account for
   *                   calculating the statistics.
   */
-class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, windowSize: Int = 10, stepUpPercentage: Double = 110, stepDownPercentage: Double = 30) {
+class ConsumptionCalc(
+    val bootGasPrice: BigInt,
+    val bootGasLimit: BigInt,
+    windowSize: Int = 10,
+    stepUpPercentage: Double = 110,
+    stepDownPercentage: Double = 30,
+    stepDownPercentageAFT: Double = 90,
+    maxStepsDownAFT: Int = 3
+) {
 
   @volatile var currentGasPrice: BigInt = bootGasPrice
   @volatile var currentGasLimit: BigInt = bootGasLimit
@@ -85,8 +93,10 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
   val asBigInt: Double => BigInt = double => BigDecimal(double).toBigInt()
   val stepUp: Double => BigInt = calcPer(stepUpPercentage) andThen asBigInt
   val stepDown: Double => BigInt = calcPer(stepDownPercentage) andThen asBigInt
+  val stepDownAFT: Double => BigInt = calcPer(stepDownPercentageAFT) andThen asBigInt
 
   private var lg: Double = -1
+  private var lsdAFT: Double = maxStepsDownAFT
 
   def calcGasValues(td: Double = 55000000000L.toDouble, tu: Double = .85): (BigInt, BigInt) = {
     val size = (duration.getN - 1).toInt
@@ -99,8 +109,11 @@ class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, window
         val pn_1 = price.getElement(size - 1)
         lg = pn_1
         setCurrentGasPrice(stepUp(gpm))
+      } else if ((lg > -1) && lsdAFT > 0) {
+        lsdAFT = lsdAFT - 1
+        setCurrentGasPrice(stepDownAFT(lg))
       } else if (lg > -1) {
-        setCurrentGasPrice(asBigInt(calcPer(70)(lg)))
+        setCurrentGasPrice(asBigInt(lg))
       } else {
         setCurrentGasPrice(stepDown(gpm))
       }

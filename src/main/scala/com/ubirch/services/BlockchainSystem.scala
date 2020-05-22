@@ -112,6 +112,8 @@ object BlockchainProcessors {
     final val stepUpPercentage: Double = config.getDouble("stepUpPercentage")
     final val stepDownPercentage: Double = config.getDouble("stepDownPercentage")
     final val durationLimit: Double = config.getDouble("durationLimit")
+    final val stepDownPercentageAFT: Double = config.getInt("stepDownPercentageAFT")
+    final val maxStepsDownAFT: Int = config.getInt("maxStepsDownAFT")
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
@@ -122,13 +124,15 @@ object BlockchainProcessors {
       bootGasLimit,
       windowSize,
       stepUpPercentage,
-      stepDownPercentage
+      stepDownPercentage,
+      stepDownPercentageAFT,
+      maxStepsDownAFT
     )
     final val jmxManagement = new BlockchainJmx(namespace, consumptionCalc)
     jmxManagement.createBean()
 
     logger.info(
-      "Basic boot values := " +
+      "Basic values := " +
         "url={} " +
         "address={} " +
         "boot_gas_price={} " +
@@ -138,7 +142,9 @@ object BlockchainProcessors {
         "window_size={} " +
         "step_up_percentage={} " +
         "step_down_percentage={} " +
-        "duration_limit={}ns",
+        "duration_limit={}ns " +
+        "step_down_percentage_aft={} " +
+        "max_steps_down_aft={} ",
       url,
       address,
       bootGasPrice,
@@ -148,7 +154,9 @@ object BlockchainProcessors {
       windowSize,
       stepUpPercentage,
       stepDownPercentage,
-      durationLimit
+      durationLimit,
+      stepDownPercentageAFT,
+      maxStepsDownAFT
     )
 
     def process(data: String): Either[Seq[Response], Throwable] = {
