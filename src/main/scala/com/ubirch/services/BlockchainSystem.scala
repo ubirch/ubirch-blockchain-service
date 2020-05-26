@@ -235,6 +235,14 @@ object BlockchainProcessors {
             logger.error("Seems that the Gas Limit is too low, try increasing it. gas_limit={}", gasLimit)
             Left(Nil)
           } else if (errorCode == -32010 && errorMessage.contains("another transaction with same nonce")) {
+            //We simulate a time out to tell the calculator to increase.
+            context = context
+              .addTxHashDuration(durationLimit.toLong + 1000L)
+              .addGasPrice(gasPrice)
+              .addGasLimit(gasLimit)
+
+            consumptionCalc.addStatistics(context.stats)
+
             Right(NeedForPauseException("Possible transaction running", errorMessage))
           } else if (errorCode == -32000 && errorMessage.contains("replacement transaction underpriced")) {
             Right(NeedForPauseException("Possible transaction running", errorMessage))

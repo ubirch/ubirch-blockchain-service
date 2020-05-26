@@ -106,15 +106,19 @@ class ConsumptionCalc(
       val dn = duration.getElement(size)
 
       if ((dn > td) && usedDelta.getGeometricMean <= tu) {
+        //step up
         val pn_1 = price.getElement(size - 1)
         lg = pn_1
         setCurrentGasPrice(stepUp(gpm))
       } else if ((lg > -1) && lsdAFT > 0) {
+        //This is step downs after first timeout
         lsdAFT = lsdAFT - 1
         setCurrentGasPrice(stepDownAFT(lg))
       } else if (lg > -1) {
+        //steady
         setCurrentGasPrice(asBigInt(lg))
       } else {
+        //step down
         setCurrentGasPrice(stepDown(gpm))
       }
     }
