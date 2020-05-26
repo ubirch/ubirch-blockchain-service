@@ -236,10 +236,13 @@ object BlockchainProcessors {
             Left(Nil)
           } else if (errorCode == -32010 && errorMessage.contains("another transaction with same nonce")) {
             //We simulate a time out to tell the calculator to increase.
+
             context = context
               .addTxHashDuration(durationLimit.toLong + 1000L)
               .addGasPrice(gasPrice)
               .addGasLimit(gasLimit)
+
+            logger.info("status=KO[timeout-simulation] {}", context.toString)
 
             consumptionCalc.addStatistics(context.stats)
 
