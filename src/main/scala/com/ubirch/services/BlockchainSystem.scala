@@ -120,7 +120,7 @@ object BlockchainProcessors {
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
     final val consumptionCalc = new ConsumptionCalc(
-      BigInt("1"),//Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger, //TODO: REMOVE THIS
+      Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
       bootGasLimit,
       windowSize,
       stepUpPercentage,
