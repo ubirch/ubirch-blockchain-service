@@ -120,7 +120,7 @@ object BlockchainProcessors {
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
     final val consumptionCalc = new ConsumptionCalc(
-      Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
+      BigInt("1"),//Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger, //TODO: REMOVE THIS
       bootGasLimit,
       windowSize,
       stepUpPercentage,
@@ -234,21 +234,22 @@ object BlockchainProcessors {
         }
 
       } catch {
-        case _: NonceHasNotChangedException =>
-          logger.info("status=KO[same-nonce] count={} {}", latestCurrentCount, context.toString)
+
+        case _:  NonceHasNotChangedException =>
+          logger.info("status=KO[nonce_has_not_changed] count={} {}", latestCurrentCount, context.toString)
           Right(NeedForPauseException("Nonce", "Same nonce used for current transaction"))
-        case e: EthereumBlockchainException if !e.isCritical =>
-          val errorMessage = e.error.map(_.getMessage).getOrElse("No Message")
-          val errorCode = e.error.map(_.getCode).getOrElse(-99)
-          val errorData = e.error.map(_.getData).getOrElse("No Data")
-          logger.error("status=KO message={} error={} code={} data={} exceptionName={}", data, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
-          if (errorCode == -32010 && errorMessage.contains("Insufficient funds")) {
+        case _:  GettingNonceException =>
+          logger.info("status=KO[getting_nonce] count={} {}", latestCurrentCount, context.toString)
+          Right(NeedForPauseException("Nonce", "Error getting next nonce"))
+        case e:  SendingTXException =>
+          logger.error("status=KO[sending_tx] message={} error={} code={} data={} exceptionName={}", data, e.errorMessage, e.errorCode, e.errorData, e.getClass.getCanonicalName)
+          if (e.errorCode == -32010 && e.errorMessage.contains("Insufficient funds")) {
             logger.error("Insufficient funds current_balance={}", Balance.currentBalance)
             Left(Nil)
-          } else if (errorCode == -32000 && errorMessage.contains("intrinsic gas too low")) {
+          } else if (e.errorCode == -32000 && e.errorMessage.contains("intrinsic gas too low")) {
             logger.error("Seems that the Gas Limit is too low, try increasing it. gas_limit={}", gasLimit)
             Left(Nil)
-          } else if (errorCode == -32010 && errorMessage.contains("another transaction with same nonce")) {
+          } else if (e.errorCode == -32010 && e.errorMessage.contains("another transaction with same nonce")) {
             //We simulate a time out to tell the calculator to increase.
 
             context = context
@@ -260,15 +261,23 @@ object BlockchainProcessors {
 
             consumptionCalc.addStatistics(context.stats)
 
-            Right(NeedForPauseException("Possible transaction running", errorMessage))
-          } else if (errorCode == -32000 && errorMessage.contains("replacement transaction underpriced")) {
-            Right(NeedForPauseException("Possible transaction running", errorMessage))
-          } else if (errorCode == -32000 && errorMessage.contains("nonce too low")) {
-            Right(NeedForPauseException("Nonce too low", errorMessage))
+            Right(NeedForPauseException("Possible transaction running", e.errorMessage))
+
+          } else if (e.errorCode == -32000 && e.errorMessage.contains("replacement transaction underpriced")) {
+            Right(NeedForPauseException("Possible transaction running", e.errorMessage))
+          } else if (e.errorCode == -32000 && e.errorMessage.contains("nonce too low")) {
+            Right(NeedForPauseException("Nonce too low", e.errorMessage))
           } else Left(Nil)
+        case _:  NoTXHashException =>
+          logger.info("status=KO[no_tx_hash] count={} {}", latestCurrentCount, context.toString)
+          Left(Nil)
+        case e:  GettingTXReceiptException =>
+          logger.error("status=KO[getting_tx_receipt] message={} error={} code={} data={} exceptionName={}", data, e.errorMessage, e.errorCode, e.errorData, e.getClass.getCanonicalName)
+          Left(Nil)
         case e: Exception =>
           logger.error("Something critical happened: ", e)
           Right(e)
+
       } finally {
 
         txFeeGauge.labels(namespace.value).set(context.transactionFee.toDouble)
@@ -297,7 +306,7 @@ object BlockchainProcessors {
 
       def receipt: Option[TransactionReceipt] = {
         val getTransactionReceiptRequest = api.ethGetTransactionReceipt(txHash).send()
-        if (getTransactionReceiptRequest.hasError) throw GettingTXReceiptExceptionTXException("Error getting transaction receipt ", Option(getTransactionReceiptRequest.getError))
+        if (getTransactionReceiptRequest.hasError) throw GettingTXReceiptException("Error getting transaction receipt ", Option(getTransactionReceiptRequest.getError))
         getTransactionReceiptRequest.getTransactionReceipt.asScala
       }
 
