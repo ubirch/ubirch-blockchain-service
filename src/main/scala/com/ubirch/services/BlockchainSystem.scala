@@ -194,6 +194,8 @@ object BlockchainProcessors {
 
           if (latestNextCount == pendingNextCount) {
 
+            shouldIncreaseNonce= false
+
             val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, latestNextCount, maybeChainId, credentials)
 
             logger.info("status=OK[in_process] next_count={} pendingNextCount={} chain_id={} data={} hex={}", latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
