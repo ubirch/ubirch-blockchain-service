@@ -273,6 +273,8 @@ object BlockchainProcessors {
               .addGasPrice(gasPrice)
               .addGasLimit(gasLimit)
 
+            shouldIncreaseNonce = true
+
             logger.info("status=KO[timeout-simulation] {}", context.toString)
 
             consumptionCalc.addStatistics(context.stats)
