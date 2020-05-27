@@ -159,7 +159,8 @@ object BlockchainProcessors {
       maxStepsDownAFT
     )
 
-    private var shouldTryIncreaseNonce = false
+    private var shouldTryIncreaseNonce_before = false
+    private var shouldTryIncreaseNonce_after = false
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
@@ -186,7 +187,8 @@ object BlockchainProcessors {
 
           val latestNextCount = {
             val c = getCount(address)
-            if(shouldTryIncreaseNonce && c != pendingNextCount) c + 1
+            if((shouldTryIncreaseNonce_before && c != pendingNextCount) || shouldTryIncreaseNonce_after && c == pendingNextCount)
+              c + 1
             else c
           }
 
@@ -194,7 +196,8 @@ object BlockchainProcessors {
 
           if (latestNextCount == pendingNextCount) {
 
-            shouldTryIncreaseNonce= false
+            shouldTryIncreaseNonce_after = false
+            shouldTryIncreaseNonce_before = false
 
             val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, latestNextCount, maybeChainId, credentials)
 
@@ -251,7 +254,7 @@ object BlockchainProcessors {
             .addGasPrice(gasPrice)
             .addGasLimit(gasLimit)
 
-          shouldTryIncreaseNonce = true
+          shouldTryIncreaseNonce_before = true
 
           Right(NeedForPauseException("Nonce", "Same nonce used for current transaction"))
         case _:  GettingNonceException =>
@@ -273,7 +276,7 @@ object BlockchainProcessors {
               .addGasPrice(gasPrice)
               .addGasLimit(gasLimit)
 
-            shouldTryIncreaseNonce = true
+            shouldTryIncreaseNonce_after = true
 
             logger.info("status=KO[timeout-simulation] {}", context.toString)
 
