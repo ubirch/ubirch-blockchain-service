@@ -160,6 +160,7 @@ object BlockchainProcessors {
     )
 
     var latestCurrentCount = BigInt(-1)
+    var shouldIncreaseNonce = false
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
@@ -182,7 +183,11 @@ object BlockchainProcessors {
           gasPriceGauge.labels(namespace.value).set(gasPrice.toDouble)
           gasLimitGauge.labels(namespace.value).set(gasLimit.toDouble)
 
-          val latestNextCount = getCount(address)
+          val latestNextCount = {
+            val c = getCount(address)
+            if(shouldIncreaseNonce) c + 1
+            else c
+          }
           val pendingNextCount = getCount(address, DefaultBlockParameterName.PENDING)
 
           if (latestNextCount > latestCurrentCount) {
@@ -237,6 +242,17 @@ object BlockchainProcessors {
 
         case _:  NonceHasNotChangedException =>
           logger.info("status=KO[nonce_has_not_changed] count={} {}", latestCurrentCount, context.toString)
+          logger.info("status=KO[timeout-simulation] count={} {}", latestCurrentCount, context.toString)
+
+          context = context
+            .addTxHashDuration(durationLimit.toLong + 1000L)
+            .addGasPrice(gasPrice)
+            .addGasLimit(gasLimit)
+
+          shouldIncreaseNonce = true
+
+          latestCurrentCount = latestCurrentCount
+
           Right(NeedForPauseException("Nonce", "Same nonce used for current transaction"))
         case _:  GettingNonceException =>
           logger.info("status=KO[getting_nonce] count={} {}", latestCurrentCount, context.toString)
