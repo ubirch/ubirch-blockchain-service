@@ -159,8 +159,8 @@ object BlockchainProcessors {
       maxStepsDownAFT
     )
 
-    var latestCurrentCount = BigInt(-1)
-    var shouldIncreaseNonce = false
+    private var latestCurrentCount = BigInt(-1)
+    private var shouldIncreaseNonce = false
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
@@ -188,7 +188,10 @@ object BlockchainProcessors {
             if(shouldIncreaseNonce) c + 1
             else c
           }
+
           val pendingNextCount = getCount(address, DefaultBlockParameterName.PENDING)
+
+          logger.info("status=OK[get_nonce] latest_count={} next_count={} pendingNextCount={}", latestCurrentCount, latestNextCount, pendingNextCount)
 
           if (latestNextCount > latestCurrentCount) {
 
@@ -250,8 +253,6 @@ object BlockchainProcessors {
             .addGasLimit(gasLimit)
 
           shouldIncreaseNonce = true
-
-          latestCurrentCount = latestCurrentCount
 
           Right(NeedForPauseException("Nonce", "Same nonce used for current transaction"))
         case _:  GettingNonceException =>
