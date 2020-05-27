@@ -159,6 +159,8 @@ object BlockchainProcessors {
       maxStepsDownAFT
     )
 
+    var latestCurrentCount = BigInt(-1)
+
     def process(data: String): Either[Seq[Response], Throwable] = {
 
       val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues(durationLimit)
@@ -180,49 +182,61 @@ object BlockchainProcessors {
           gasPriceGauge.labels(namespace.value).set(gasPrice.toDouble)
           gasLimitGauge.labels(namespace.value).set(gasLimit.toDouble)
 
-          val currentCount = getCount(address)
+          val latestNextCount = getCount(address)
+          val pendingNextCount = getCount(address, DefaultBlockParameterName.PENDING)
 
-          val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, currentCount, maybeChainId, credentials)
+          if (latestNextCount > latestCurrentCount) {
 
-          logger.info("Sending transaction := data={} count={} chain_id={} hex={} ", data, currentCount, maybeChainId.getOrElse("None"), hexMessage)
+            latestCurrentCount = latestNextCount
 
-          val txHash = sendTransaction(hexMessage)
-          val timedReceipt = Time.time(getReceipt(txHash))
-          val response = timedReceipt.result.map { receipt =>
+            val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, latestCurrentCount, maybeChainId, credentials)
 
-            context = context
-              .addTxHash(txHash)
-              .addTxHashDuration(timedReceipt.elapsed)
-              .addGasPrice(gasPrice)
-              .addGasLimit(gasLimit)
-              .addGasUsed(receipt.getGasUsed)
-              .addCumulativeGasUsed(receipt.getCumulativeGasUsed)
+            logger.info("status=OK[in_process] latest_count={} next_count={} pendingNextCount={} chain_id={} data={} hex={}", latestCurrentCount, latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
 
-            logger.info("status=OK {}", context.toString)
-            Response.Added(txHash, data, namespace.value, networkInfo, networkType)
+            val txHash = sendTransaction(hexMessage)
+            val timedReceipt = Time.time(getReceipt(txHash))
+            val response = timedReceipt.result.map { receipt =>
 
-          }.getOrElse {
+              context = context
+                .addTxHash(txHash)
+                .addTxHashDuration(timedReceipt.elapsed)
+                .addGasPrice(gasPrice)
+                .addGasLimit(gasLimit)
+                .addGasUsed(receipt.getGasUsed)
+                .addCumulativeGasUsed(receipt.getCumulativeGasUsed)
 
-            context = context
-              .addTxHash(txHash)
-              .addTxHashDuration(timedReceipt.elapsed)
-              .addGasPrice(gasPrice)
-              .addGasLimit(gasLimit)
+              logger.info("status=OK[sent] {}", context.toString)
+              Response.Added(txHash, data, namespace.value, networkInfo, networkType)
 
-            timeoutsCounter.labels(namespace.value).inc()
+            }.getOrElse {
 
-            logger.error("status=KO[timeout] {}", context.toString)
-            Response.Timeout(txHash, data, namespace.value, networkInfo, networkType)
+              context = context
+                .addTxHash(txHash)
+                .addTxHashDuration(timedReceipt.elapsed)
+                .addGasPrice(gasPrice)
+                .addGasLimit(gasLimit)
 
+              timeoutsCounter.labels(namespace.value).inc()
+
+              logger.error("status=KO[timeout] {}", context.toString)
+              Response.Timeout(txHash, data, namespace.value, networkInfo, networkType)
+
+            }
+
+            consumptionCalc.addStatistics(context.stats)
+
+            Left(List(response))
+
+          } else {
+            throw NonceHasNotChangedException("Nonce is the same", None)
           }
-
-          consumptionCalc.addStatistics(context.stats)
-
-          Left(List(response))
 
         }
 
       } catch {
+        case _: NonceHasNotChangedException =>
+          logger.info("status=KO[same-nonce] count={} {}", latestCurrentCount, context.toString)
+          Right(NeedForPauseException("Nonce", "Same nonce used for current transaction"))
         case e: EthereumBlockchainException if !e.isCritical =>
           val errorMessage = e.error.map(_.getMessage).getOrElse("No Message")
           val errorCode = e.error.map(_.getCode).getOrElse(-99)
@@ -242,7 +256,7 @@ object BlockchainProcessors {
               .addGasPrice(gasPrice)
               .addGasLimit(gasLimit)
 
-            logger.info("status=KO[timeout-simulation] {}", context.toString)
+            logger.info("status=KO[timeout-simulation] count={} {}", latestCurrentCount, context.toString)
 
             consumptionCalc.addStatistics(context.stats)
 
@@ -297,7 +311,7 @@ object BlockchainProcessors {
           val maybeReceipt = receipt
 
           if (maybeReceipt.isEmpty) {
-            //logger.info("receipt_attempt={} sleep_in_millis={} ...", count, sleepInMillis)
+            logger.info("status=OK[waiting_receipt] receipt_attempt={} sleep_in_millis={}", count, sleepInMillis)
             val sleep = if (sleepInMillis <= 0) DEFAULT_SLEEP_MILLIS else sleepInMillis
             Thread.sleep(sleep)
             go(count - 1, sleep - 1000)
