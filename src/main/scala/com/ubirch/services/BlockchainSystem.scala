@@ -159,7 +159,6 @@ object BlockchainProcessors {
       maxStepsDownAFT
     )
 
-    private var latestCurrentCount = BigInt(-1)
     private var shouldIncreaseNonce = false
 
     def process(data: String): Either[Seq[Response], Throwable] = {
@@ -191,15 +190,13 @@ object BlockchainProcessors {
 
           val pendingNextCount = getCount(address, DefaultBlockParameterName.PENDING)
 
-          logger.info("status=OK[get_nonce] latest_count={} next_count={} pendingNextCount={}", latestCurrentCount, latestNextCount, pendingNextCount)
+          logger.info("status=OK[get_nonce] next_count={} pendingNextCount={}", latestNextCount, pendingNextCount)
 
-          if (latestNextCount > latestCurrentCount) {
+          if (latestNextCount == pendingNextCount) {
 
-            latestCurrentCount = latestNextCount
+            val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, latestNextCount, maybeChainId, credentials)
 
-            val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, latestCurrentCount, maybeChainId, credentials)
-
-            logger.info("status=OK[in_process] latest_count={} next_count={} pendingNextCount={} chain_id={} data={} hex={}", latestCurrentCount, latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
+            logger.info("status=OK[in_process] next_count={} pendingNextCount={} chain_id={} data={} hex={}", latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
 
             val txHash = sendTransaction(hexMessage)
             val timedReceipt = Time.time(getReceipt(txHash))
@@ -244,8 +241,8 @@ object BlockchainProcessors {
       } catch {
 
         case _:  NonceHasNotChangedException =>
-          logger.info("status=KO[nonce_has_not_changed] count={} {}", latestCurrentCount, context.toString)
-          logger.info("status=KO[timeout-simulation] count={} {}", latestCurrentCount, context.toString)
+          logger.info("status=KO[nonce_has_not_changed] {}", context.toString)
+          logger.info("status=KO[timeout-simulation] {}", context.toString)
 
           context = context
             .addTxHashDuration(durationLimit.toLong + 1000L)
@@ -256,7 +253,7 @@ object BlockchainProcessors {
 
           Right(NeedForPauseException("Nonce", "Same nonce used for current transaction"))
         case _:  GettingNonceException =>
-          logger.info("status=KO[getting_nonce] count={} {}", latestCurrentCount, context.toString)
+          logger.info("status=KO[getting_nonce] {}", context.toString)
           Right(NeedForPauseException("Nonce", "Error getting next nonce"))
         case e:  SendingTXException =>
           logger.error("status=KO[sending_tx] message={} error={} code={} data={} exceptionName={}", data, e.errorMessage, e.errorCode, e.errorData, e.getClass.getCanonicalName)
@@ -274,7 +271,7 @@ object BlockchainProcessors {
               .addGasPrice(gasPrice)
               .addGasLimit(gasLimit)
 
-            logger.info("status=KO[timeout-simulation] count={} {}", latestCurrentCount, context.toString)
+            logger.info("status=KO[timeout-simulation] {}", context.toString)
 
             consumptionCalc.addStatistics(context.stats)
 
@@ -286,7 +283,7 @@ object BlockchainProcessors {
             Right(NeedForPauseException("Nonce too low", e.errorMessage))
           } else Left(Nil)
         case _:  NoTXHashException =>
-          logger.info("status=KO[no_tx_hash] count={} {}", latestCurrentCount, context.toString)
+          logger.info("status=KO[no_tx_hash] {}", context.toString)
           Left(Nil)
         case e:  GettingTXReceiptException =>
           logger.error("status=KO[getting_tx_receipt] message={} error={} code={} data={} exceptionName={}", data, e.errorMessage, e.errorCode, e.errorData, e.getClass.getCanonicalName)
