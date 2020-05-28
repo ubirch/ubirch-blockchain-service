@@ -114,20 +114,34 @@ object BlockchainProcessors {
     final val durationLimit: Double = config.getDouble("durationLimit")
     final val stepDownPercentageAFT: Double = config.getInt("stepDownPercentageAFT")
     final val maxStepsDownAFT: Int = config.getInt("maxStepsDownAFT")
+    final val calcType: String = config.getString("calcType")
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
-    final val consumptionCalc = new ConsumptionCalc(
-      Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
-      bootGasLimit,
-      windowSize,
-      stepUpPercentage,
-      stepDownPercentage,
-      stepDownPercentageAFT,
-      maxStepsDownAFT
-    )
+    final val consumptionCalc: ConsumptionCalc = if (calcType == "risky") {
+      new PersistentConsumptionCalc(
+        Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
+        bootGasLimit,
+        windowSize,
+        stepUpPercentage,
+        stepDownPercentage,
+        stepDownPercentageAFT,
+        maxStepsDownAFT
+      )
+    } else if (calcType == "conservative") {
+      new ConservativeConsumptionCalc(
+        Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
+        bootGasLimit,
+        windowSize,
+        stepUpPercentage,
+        stepDownPercentage
+      )
+    } else {
+      throw new Exception("No calc selected.")
+    }
+
     final val jmxManagement = new BlockchainJmx(namespace, consumptionCalc)
     jmxManagement.createBean()
 
@@ -144,7 +158,8 @@ object BlockchainProcessors {
         "step_down_percentage={} " +
         "duration_limit={}ns " +
         "step_down_percentage_aft={} " +
-        "max_steps_down_aft={} ",
+        "max_steps_down_aft={} " +
+        "calc_type={} ",
       url,
       address,
       bootGasPrice,
@@ -156,11 +171,9 @@ object BlockchainProcessors {
       stepDownPercentage,
       durationLimit,
       stepDownPercentageAFT,
-      maxStepsDownAFT
+      maxStepsDownAFT,
+      calcType
     )
-
-    private var shouldTryIncreaseNonce_before = false
-    private var shouldTryIncreaseNonce_after = false
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
@@ -184,83 +197,55 @@ object BlockchainProcessors {
           gasLimitGauge.labels(namespace.value).set(gasLimit.toDouble)
 
           val pendingNextCount = getCount(address, DefaultBlockParameterName.PENDING)
-
-          val latestNextCount = {
-            val c = getCount(address)
-            if((shouldTryIncreaseNonce_before && c != pendingNextCount) || shouldTryIncreaseNonce_after && c == pendingNextCount)
-              c + 1
-            else c
-          }
+          val latestNextCount = getCount(address)
 
           logger.info("status=OK[get_nonce] next_count={} pendingNextCount={}", latestNextCount, pendingNextCount)
 
-          if (latestNextCount >= pendingNextCount) {
+          val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, latestNextCount, maybeChainId, credentials)
 
-            shouldTryIncreaseNonce_after = false
-            shouldTryIncreaseNonce_before = false
+          logger.info("status=OK[in_process] next_count={} pendingNextCount={} chain_id={} data={} hex={}", latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
 
-            val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, latestNextCount, maybeChainId, credentials)
+          val txHash = sendTransaction(hexMessage)
+          val timedReceipt = Time.time(getReceipt(txHash))
+          val response = timedReceipt.result.map { receipt =>
 
-            logger.info("status=OK[in_process] next_count={} pendingNextCount={} chain_id={} data={} hex={}", latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
+            context = context
+              .addTxHash(txHash)
+              .addTxHashDuration(timedReceipt.elapsed)
+              .addGasPrice(gasPrice)
+              .addGasLimit(gasLimit)
+              .addGasUsed(receipt.getGasUsed)
+              .addCumulativeGasUsed(receipt.getCumulativeGasUsed)
 
-            val txHash = sendTransaction(hexMessage)
-            val timedReceipt = Time.time(getReceipt(txHash))
-            val response = timedReceipt.result.map { receipt =>
+            logger.info("status=OK[sent] {}", context.toString)
+            Response.Added(txHash, data, namespace.value, networkInfo, networkType)
 
-              context = context
-                .addTxHash(txHash)
-                .addTxHashDuration(timedReceipt.elapsed)
-                .addGasPrice(gasPrice)
-                .addGasLimit(gasLimit)
-                .addGasUsed(receipt.getGasUsed)
-                .addCumulativeGasUsed(receipt.getCumulativeGasUsed)
+          }.getOrElse {
 
-              logger.info("status=OK[sent] {}", context.toString)
-              Response.Added(txHash, data, namespace.value, networkInfo, networkType)
+            context = context
+              .addTxHash(txHash)
+              .addTxHashDuration(timedReceipt.elapsed)
+              .addGasPrice(gasPrice)
+              .addGasLimit(gasLimit)
 
-            }.getOrElse {
+            timeoutsCounter.labels(namespace.value).inc()
 
-              context = context
-                .addTxHash(txHash)
-                .addTxHashDuration(timedReceipt.elapsed)
-                .addGasPrice(gasPrice)
-                .addGasLimit(gasLimit)
+            logger.error("status=KO[timeout] {}", context.toString)
+            Response.Timeout(txHash, data, namespace.value, networkInfo, networkType)
 
-              timeoutsCounter.labels(namespace.value).inc()
-
-              logger.error("status=KO[timeout] {}", context.toString)
-              Response.Timeout(txHash, data, namespace.value, networkInfo, networkType)
-
-            }
-
-            consumptionCalc.addStatistics(context.stats)
-
-            Left(List(response))
-
-          } else {
-            throw NonceHasNotChangedException("Nonce is the same", None)
           }
+
+          consumptionCalc.addStatistics(context.stats)
+
+          Left(List(response))
 
         }
 
       } catch {
-
-        case _:  NonceHasNotChangedException =>
-          logger.info("status=KO[nonce_has_not_changed] {}", context.toString)
-          logger.info("status=KO[timeout-simulation] {}", context.toString)
-
-          context = context
-            .addTxHashDuration(durationLimit.toLong + 1000L)
-            .addGasPrice(gasPrice)
-            .addGasLimit(gasLimit)
-
-          shouldTryIncreaseNonce_before = true
-
-          Right(NeedForPauseException("Nonce", "Same nonce used for current transaction"))
-        case _:  GettingNonceException =>
+        case _: GettingNonceException =>
           logger.info("status=KO[getting_nonce] {}", context.toString)
           Right(NeedForPauseException("Nonce", "Error getting next nonce"))
-        case e:  SendingTXException =>
+        case e: SendingTXException =>
           logger.error("status=KO[sending_tx] message={} error={} code={} data={} exceptionName={}", data, e.errorMessage, e.errorCode, e.errorData, e.getClass.getCanonicalName)
           if (e.errorCode == -32010 && e.errorMessage.contains("Insufficient funds")) {
             logger.error("Insufficient funds current_balance={}", Balance.currentBalance)
@@ -276,8 +261,6 @@ object BlockchainProcessors {
               .addGasPrice(gasPrice)
               .addGasLimit(gasLimit)
 
-            shouldTryIncreaseNonce_after = true
-
             logger.info("status=KO[timeout-simulation] {}", context.toString)
 
             consumptionCalc.addStatistics(context.stats)
@@ -289,10 +272,10 @@ object BlockchainProcessors {
           } else if (e.errorCode == -32000 && e.errorMessage.contains("nonce too low")) {
             Right(NeedForPauseException("Nonce too low", e.errorMessage))
           } else Left(Nil)
-        case _:  NoTXHashException =>
+        case _: NoTXHashException =>
           logger.info("status=KO[no_tx_hash] {}", context.toString)
           Left(Nil)
-        case e:  GettingTXReceiptException =>
+        case e: GettingTXReceiptException =>
           logger.error("status=KO[getting_tx_receipt] message={} error={} code={} data={} exceptionName={}", data, e.errorMessage, e.errorCode, e.errorData, e.getClass.getCanonicalName)
           Left(Nil)
         case e: Exception =>
