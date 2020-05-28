@@ -194,7 +194,7 @@ object BlockchainProcessors {
 
           logger.info("status=OK[get_nonce] next_count={} pendingNextCount={}", latestNextCount, pendingNextCount)
 
-          if (latestNextCount == pendingNextCount) {
+          if (latestNextCount >= pendingNextCount) {
 
             shouldTryIncreaseNonce_after = false
             shouldTryIncreaseNonce_before = false
