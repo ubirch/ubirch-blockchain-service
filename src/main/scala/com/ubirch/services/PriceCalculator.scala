@@ -167,7 +167,7 @@ class ConservativeConsumptionCalc(
   def calcGasValues(td: Double = 50000000000L.toDouble, tu: Double = .85): (BigInt, BigInt) = {
 
     if (isJump) {
-      clearWithGasPrice(bootGasLimit)
+      clearWithGasPrice(bootGasPrice)
     } else {
       val size = (duration.getN - 1).toInt
       if (size > 0) {
