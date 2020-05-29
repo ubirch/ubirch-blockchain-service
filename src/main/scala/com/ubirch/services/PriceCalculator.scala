@@ -40,8 +40,9 @@ trait ConsumptionCalc {
   val bootGasPrice: BigInt
   val bootGasLimit: BigInt
 
-  var currentGasPrice: BigInt = bootGasPrice
-  var currentGasLimit: BigInt = bootGasLimit
+  private var currentGasPrice: BigInt = bootGasPrice
+  private var currentGasLimit: BigInt = bootGasLimit
+  private var jump: Boolean = false
 
   val windowSize: Int
 
@@ -61,8 +62,11 @@ trait ConsumptionCalc {
   }
 
   def setCurrentGasLimit(newGasLimit: BigInt): Unit = currentGasLimit = synchronized(newGasLimit)
-
   def setCurrentGasPrice(newGasPrice: BigInt): Unit = currentGasPrice = synchronized(newGasPrice)
+  def setJump(value: Boolean): Unit = jump = synchronized(value)
+  def getCurrentGasLimit: BigInt = currentGasLimit
+  def getCurrentGasPrice: BigInt = currentGasPrice
+  def isJump: Boolean = jump
 
   def clearWithGasPrice(newGasPrice: BigInt): Unit = synchronized {
     duration.clear()
@@ -70,6 +74,7 @@ trait ConsumptionCalc {
     limit.clear()
     usedDelta.clear()
     currentGasPrice = newGasPrice
+    setJump(false)
   }
 
   def setWindows(windowSize: Int): Unit = {
@@ -136,7 +141,7 @@ class PersistentConsumptionCalc(
       }
     }
 
-    (currentGasPrice, currentGasLimit)
+    (getCurrentGasPrice, getCurrentGasLimit)
   }
 
 }
@@ -160,24 +165,28 @@ class ConservativeConsumptionCalc(
   private var lastGood: Double = -1
 
   def calcGasValues(td: Double = 50000000000L.toDouble, tu: Double = .85): (BigInt, BigInt) = {
-    val size = (duration.getN - 1).toInt
 
-    if (size > 0) {
-      val gpm = price.getGeometricMean
-      val dn = duration.getElement(size)
+    if (isJump) {
+      clearWithGasPrice(bootGasLimit)
+    } else {
+      val size = (duration.getN - 1).toInt
+      if (size > 0) {
+        val gpm = price.getGeometricMean
+        val dn = duration.getElement(size)
 
-      if ((dn > td) && usedDelta.getGeometricMean <= tu) {
-        val pn_1 = price.getElement(size - 1)
-        lastGood = pn_1
-        setCurrentGasPrice(stepUp(gpm))
-      } else if (lastGood > -1) {
-        setCurrentGasPrice(asBigInt(lastGood))
-      } else {
-        setCurrentGasPrice(stepDown(gpm))
+        if ((dn > td) && usedDelta.getGeometricMean <= tu) {
+          val pn_1 = price.getElement(size - 1)
+          lastGood = pn_1
+          setCurrentGasPrice(stepUp(gpm))
+        } else if (lastGood > -1) {
+          setCurrentGasPrice(asBigInt(lastGood))
+        } else {
+          setCurrentGasPrice(stepDown(gpm))
+        }
       }
     }
 
-    (currentGasPrice, currentGasLimit)
+    (getCurrentGasPrice, getCurrentGasLimit)
   }
 
 }

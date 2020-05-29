@@ -254,16 +254,16 @@ object BlockchainProcessors {
             logger.error("Seems that the Gas Limit is too low, try increasing it. gas_limit={}", gasLimit)
             Left(Nil)
           } else if (e.errorCode == -32010 && e.errorMessage.contains("another transaction with same nonce")) {
-            //We simulate a time out to tell the calculator to increase.
+            //We simulate a jump out to tell the calculator to increase and get unstuck
 
             context = context
               .addTxHashDuration(durationLimit.toLong + 1000L)
               .addGasPrice(gasPrice)
               .addGasLimit(gasLimit)
 
-            logger.info("status=KO[timeout-simulation] {}", context.toString)
+            logger.info("status=KO[jump-simulation] {}", context.toString)
 
-            consumptionCalc.addStatistics(context.stats)
+            consumptionCalc.setJump(true)
 
             Right(NeedForPauseException("Possible transaction running", e.errorMessage))
 
