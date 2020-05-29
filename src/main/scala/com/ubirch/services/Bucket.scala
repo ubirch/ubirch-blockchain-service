@@ -19,6 +19,7 @@ object ConfPaths {
   val CONSUMER_MAX_POLL_RECORDS = "blockchainAnchoring.kafkaConsumer.maxPollRecords"
   val CONSUMER_GRACEFUL_TIMEOUT = "blockchainAnchoring.kafkaConsumer.gracefulTimeout"
   val METRICS_SUB_NAMESPACE = "blockchainAnchoring.kafkaConsumer.metricsSubNamespace"
+  val MAX_TIME_AGGREGATION_SECONDS = "blockchainAnchoring.kafkaConsumer.maxTimeAggregationSeconds"
   val CONSUMER_RECONNECT_BACKOFF_MS_CONFIG = "blockchainAnchoring.kafkaConsumer.reconnectBackoffMsConfig"
   val CONSUMER_RECONNECT_BACKOFF_MAX_MS_CONFIG = "blockchainAnchoring.kafkaConsumer.reconnectBackoffMaxMsConfig"
 
@@ -103,6 +104,7 @@ trait Bucket extends ExpressKafkaApp[String, String, Unit] {
   override val consumerGroupId: String = conf.getString(ConfPaths.CONSUMER_GROUP_ID)
   override val consumerMaxPollRecords: Int = conf.getInt(ConfPaths.CONSUMER_MAX_POLL_RECORDS)
   override val consumerGracefulTimeout: Int = conf.getInt(ConfPaths.CONSUMER_GRACEFUL_TIMEOUT)
+  override val maxTimeAggregationSeconds: Long = conf.getInt(ConfPaths.MAX_TIME_AGGREGATION_SECONDS)
   override val producerBootstrapServers: String = conf.getString(ConfPaths.PRODUCER_BOOTSTRAP_SERVERS)
   override val metricsSubNamespace: String = conf.getString(ConfPaths.METRICS_SUB_NAMESPACE)
   override val consumerReconnectBackoffMsConfig: Long = conf.getLong(ConfPaths.CONSUMER_RECONNECT_BACKOFF_MS_CONFIG)
@@ -111,5 +113,4 @@ trait Bucket extends ExpressKafkaApp[String, String, Unit] {
 
   override def prefix: String = "ubirch_identity"
 
-  override val maxTimeAggregationSeconds: Long = 120
 }
