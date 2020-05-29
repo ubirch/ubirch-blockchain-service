@@ -23,8 +23,8 @@ class BlockchainJmx(namespace: Namespace, consumptionCalc: ConsumptionCalc) exte
     val mbean = new StandardMBean(classOf[BlockchainBean]) with BlockchainBean {
       override def getBootGasPrice: String = consumptionCalc.bootGasPrice.toString()
       override def getBootGasLimit: String = consumptionCalc.bootGasLimit.toString()
-      override def getCurrentGasPrice: String = consumptionCalc.currentGasPrice.toString()
-      override def getCurrentGasLimit: String = consumptionCalc.currentGasLimit.toString()
+      override def getCurrentGasPrice: String = consumptionCalc.getCurrentGasPrice.toString()
+      override def getCurrentGasLimit: String = consumptionCalc.getCurrentGasLimit.toString()
       override def gasPrice(newGasPrice: String): Unit = {
         logger.info("Setting new GasPrice={}", newGasPrice)
         consumptionCalc.clearWithGasPrice(new BigInteger(newGasPrice))
