@@ -117,6 +117,11 @@ class PersistentConsumptionCalc(
   private var lastGood: Double = -1
   private var lastStepDownAFT: Double = maxStepsDownAFT
 
+  override def clearWithGasPrice(newGasPrice: BigInt): Unit = {
+    lastGood = -1
+    super.clearWithGasPrice(newGasPrice)
+  }
+
   def calcGasValues(td: Double = 55000000000L.toDouble, tu: Double = .85): (BigInt, BigInt) = {
     val size = (duration.getN - 1).toInt
     if (size > 0) {
@@ -163,6 +168,11 @@ class ConservativeConsumptionCalc(
   private val stepDown: Double => BigInt = calcPer(stepDownPercentage) andThen asBigInt
 
   private var lastGood: Double = -1
+
+  override def clearWithGasPrice(newGasPrice: BigInt): Unit = {
+    lastGood = -1
+    super.clearWithGasPrice(newGasPrice)
+  }
 
   def calcGasValues(td: Double = 50000000000L.toDouble, tu: Double = .85): (BigInt, BigInt) = {
 
