@@ -146,6 +146,10 @@ class PersistentConsumptionCalc(
       }
     }
 
+    if (getCurrentGasPrice <= 0) {
+      clearWithGasPrice(bootGasPrice)
+    }
+
     (getCurrentGasPrice, getCurrentGasLimit)
   }
 
@@ -194,6 +198,10 @@ class ConservativeConsumptionCalc(
           setCurrentGasPrice(stepDown(gpm))
         }
       }
+    }
+
+    if (getCurrentGasPrice <= 0) {
+      clearWithGasPrice(bootGasPrice)
     }
 
     (getCurrentGasPrice, getCurrentGasLimit)
