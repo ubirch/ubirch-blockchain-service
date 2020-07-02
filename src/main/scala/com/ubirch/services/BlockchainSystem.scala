@@ -4,6 +4,7 @@ import java.net.URL
 
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
+import com.ubirch.jmx.BlockchainJmx
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }

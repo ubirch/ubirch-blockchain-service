@@ -1,8 +1,10 @@
 package com.ubirch
 package services
 
+import com.ubirch.jmx.BucketJmx
 import com.ubirch.kafka.express.{ ConfigBase, ExpressKafkaApp }
 import com.ubirch.models.{ Response, TransactionMetrics }
+import com.ubirch.util.RunTimeHook
 import org.apache.kafka.common.serialization.{ Deserializer, Serializer, StringDeserializer, StringSerializer }
 
 /**
@@ -32,9 +34,18 @@ object ConfPaths {
 }
 
 /**
+  * Class to safely modify state
+  * @param value the value of flush
+  */
+case class Flush(private var value: Boolean) {
+  def setValue(newValue: Boolean): Unit = synchronized(value = newValue)
+  def getValue: Boolean = synchronized(value)
+}
+
+/**
   * Represent an abstraction for picking up messages to process.
   */
-trait BucketPicker extends TransactionMetrics with ConfigBase {
+trait BucketPicker extends RunTimeHook with TransactionMetrics with ConfigBase {
   a: ExpressKafkaApp[String, String, Unit] =>
 
   import com.ubirch.services.BlockchainProcessors._
@@ -59,14 +70,16 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
 
   lazy val blockchain: BlockchainProcessor[String] = getProcessor(namespace)
 
-  lazy val flush: Boolean = conf.getBoolean("flush")
+  val flush: Flush = Flush(conf.getBoolean("flush"))
+  final val bucketJmx = new BucketJmx(namespace, flush)
+  bucketJmx.createBean()
 
   logger.info("Configured namespace={}", namespace.value)
   logger.info("Configured blockchain_processor={}", Option(blockchain.getClass.getCanonicalName).getOrElse("Custom Processor"))
 
   override val process: Process = Process { consumerRecords =>
 
-    if (!flush) {
+    if (!flush.getValue) {
       val data = consumerRecords.map(x => x.value())
       blockchain.process(data) match {
         case Left(responses) =>
@@ -86,6 +99,11 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
       }
     }
 
+  }
+
+  override def shutdownHook(): Unit = {
+    logger.info("Shutting down bucket={}", namespace.value)
+    bucketJmx.unregisterMBean()
   }
 
 }
@@ -111,6 +129,6 @@ trait Bucket extends ExpressKafkaApp[String, String, Unit] {
   override val consumerReconnectBackoffMaxMsConfig: Long = conf.getLong(ConfPaths.CONSUMER_RECONNECT_BACKOFF_MAX_MS_CONFIG)
   override val lingerMs: Int = conf.getInt(ConfPaths.LINGER_MS)
 
-  override def prefix: String = "ubirch_identity"
+  override def prefix: String = "ubirch_blockchain"
 
 }
