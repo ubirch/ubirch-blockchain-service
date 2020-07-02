@@ -4,11 +4,12 @@ import java.net.URL
 
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
+import com.ubirch.jmx.BlockchainJmx
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }
 import com.ubirch.util.Exceptions._
-import com.ubirch.util.{ RunTimeHook, Time }
+import com.ubirch.util.Time
 import org.slf4j.LoggerFactory
 
 import scala.annotation.tailrec
@@ -77,7 +78,6 @@ object BlockchainProcessors {
     with BalanceGaugeMetric
     with EthereumInternalMetrics
     with TimeMetrics
-    with RunTimeHook
     with ConfigBase {
 
     @transient
@@ -380,7 +380,7 @@ object BlockchainProcessors {
       (address, transactionCountResponse.getBalance)
     }
 
-    def shutdownHook(): Unit = {
+    sys.addShutdownHook {
       logger.info("Shutting down blockchain_processor_system={} and balance monitor", namespace.value)
       jmxManagement.unregisterMBean()
       balanceCancelable.cancel()

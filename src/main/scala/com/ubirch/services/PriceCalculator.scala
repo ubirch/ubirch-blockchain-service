@@ -5,19 +5,6 @@ import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics
 import scala.language.postfixOps
 
 /**
-  * Represents a basic interface/trait for our blockchain jmx control
-  */
-trait BlockchainBean {
-  def getBootGasPrice: String
-  def getBootGasLimit: String
-  def getCurrentGasPrice: String
-  def getCurrentGasLimit: String
-
-  def gasPrice(newGasPrice: String): Unit
-  def gasLimit(newGasLimit: String): Unit
-}
-
-/**
   * Represents a data structure that allows easy packing for the basic
   * statistics points
   * @param duration Represents the duration in nano seconds of the tx.

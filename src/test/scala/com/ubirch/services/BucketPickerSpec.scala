@@ -41,6 +41,7 @@ class BucketPickerSpec extends TestBase {
               Left(resp)
             }
           }
+
         }
 
         override val consumerBootstrapServers: String = bootstrapServers

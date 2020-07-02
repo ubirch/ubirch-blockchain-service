@@ -1,11 +1,24 @@
-package com.ubirch.services
+package com.ubirch.jmx
 
-import java.lang.management.ManagementFactory
 import java.math.BigInteger
 
 import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.services.BlockchainSystem.Namespace
-import javax.management.{ InstanceAlreadyExistsException, InstanceNotFoundException, ObjectName, StandardMBean }
+import com.ubirch.services.ConsumptionCalc
+import javax.management.{ InstanceAlreadyExistsException, ObjectName, StandardMBean }
+
+/**
+  * Represents a basic interface/trait for our blockchain jmx control
+  */
+trait BlockchainBean {
+  def getBootGasPrice: String
+  def getBootGasLimit: String
+  def getCurrentGasPrice: String
+  def getCurrentGasLimit: String
+
+  def gasPrice(newGasPrice: String): Unit
+  def gasLimit(newGasLimit: String): Unit
+}
 
 /**
   * Represents the JMX Implementation for our system.
@@ -13,10 +26,8 @@ import javax.management.{ InstanceAlreadyExistsException, InstanceNotFoundExcept
   * @param namespace Represents the namespace for the JMX, which is the ethereum name
   * @param consumptionCalc Represents an implementation of the consumption calculator.
   */
-class BlockchainJmx(namespace: Namespace, consumptionCalc: ConsumptionCalc) extends LazyLogging {
-
-  private val mBeanServer = ManagementFactory.getPlatformMBeanServer
-  private val beanName = new ObjectName(s"com.ubirch.services.blockchain:type=Balance,name=${namespace.value}")
+class BlockchainJmx(namespace: Namespace, consumptionCalc: ConsumptionCalc)
+  extends JMXBase(new ObjectName(s"com.ubirch.services.blockchain:type=Balance,name=${namespace.value}")) with LazyLogging {
 
   def createBean(): Unit = {
 
@@ -41,16 +52,6 @@ class BlockchainJmx(namespace: Namespace, consumptionCalc: ConsumptionCalc) exte
     } catch {
       case _: InstanceAlreadyExistsException =>
         logger.warn(s"Could not register Blockchain JMX MBean with name=$beanName as it is already registered. ")
-    }
-
-  }
-
-  def unregisterMBean(): Unit = {
-    try {
-      mBeanServer.unregisterMBean(beanName)
-    } catch {
-      case _: InstanceNotFoundException =>
-        logger.warn(s"Could not unregister Cluster JMX MBean with name=$beanName as it was not found.")
     }
 
   }
