@@ -4,7 +4,6 @@ package services
 import com.ubirch.jmx.BucketJmx
 import com.ubirch.kafka.express.{ ConfigBase, ExpressKafkaApp }
 import com.ubirch.models.{ Response, TransactionMetrics }
-import com.ubirch.util.RunTimeHook
 import org.apache.kafka.common.serialization.{ Deserializer, Serializer, StringDeserializer, StringSerializer }
 
 /**
@@ -45,7 +44,7 @@ case class Flush(private var value: Boolean) {
 /**
   * Represent an abstraction for picking up messages to process.
   */
-trait BucketPicker extends RunTimeHook with TransactionMetrics with ConfigBase {
+trait BucketPicker extends TransactionMetrics with ConfigBase {
   a: ExpressKafkaApp[String, String, Unit] =>
 
   import com.ubirch.services.BlockchainProcessors._
@@ -101,8 +100,8 @@ trait BucketPicker extends RunTimeHook with TransactionMetrics with ConfigBase {
 
   }
 
-  override def shutdownHook(): Unit = {
-    logger.info("Shutting down bucket={}", namespace.value)
+  sys.addShutdownHook {
+    logger.info("Shutting down bucket_picker={}", namespace.value)
     bucketJmx.unregisterMBean()
   }
 
