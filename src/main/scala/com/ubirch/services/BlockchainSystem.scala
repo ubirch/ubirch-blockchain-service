@@ -4,11 +4,12 @@ import java.net.URL
 
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
+import com.ubirch.jmx.BlockchainJmx
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }
 import com.ubirch.util.Exceptions._
-import com.ubirch.util.{ RunTimeHook, Time }
+import com.ubirch.util.Time
 import org.slf4j.LoggerFactory
 
 import scala.annotation.tailrec
@@ -77,7 +78,6 @@ object BlockchainProcessors {
     with BalanceGaugeMetric
     with EthereumInternalMetrics
     with TimeMetrics
-    with RunTimeHook
     with ConfigBase {
 
     @transient
@@ -111,26 +111,73 @@ object BlockchainProcessors {
     final val windowSize: Int = config.getInt("windowSize")
     final val stepUpPercentage: Double = config.getDouble("stepUpPercentage")
     final val stepDownPercentage: Double = config.getDouble("stepDownPercentage")
+    final val durationLimit: Double = config.getDouble("durationLimit")
+    final val stepDownPercentageAFT: Double = config.getInt("stepDownPercentageAFT")
+    final val maxStepsDownAFT: Int = config.getInt("maxStepsDownAFT")
+    final val calcType: String = config.getString("calcType")
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
-    final val consumptionCalc = new ConsumptionCalc(
-      Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
-      bootGasLimit,
-      windowSize,
-      stepUpPercentage,
-      stepDownPercentage
-    )
+    final val consumptionCalc: ConsumptionCalc = if (calcType == "risky") {
+      new PersistentConsumptionCalc(
+        Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
+        bootGasLimit,
+        windowSize,
+        stepUpPercentage,
+        stepDownPercentage,
+        stepDownPercentageAFT,
+        maxStepsDownAFT
+      )
+    } else if (calcType == "conservative") {
+      new ConservativeConsumptionCalc(
+        Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
+        bootGasLimit,
+        windowSize,
+        stepUpPercentage,
+        stepDownPercentage
+      )
+    } else {
+      throw new Exception("No calc selected.")
+    }
+
     final val jmxManagement = new BlockchainJmx(namespace, consumptionCalc)
     jmxManagement.createBean()
 
-    logger.info("Basic boot values := url={} address={} boot_gas_price={} boot_gas_limit={} chain_id={}", url, address, bootGasPrice, bootGasLimit, maybeChainId.getOrElse("-"))
+    logger.info(
+      "Basic values := " +
+        "url={} " +
+        "address={} " +
+        "boot_gas_price={} " +
+        "boot_gas_limit={} " +
+        "chain_id={} " +
+        "check_balance_every_in_seconds={} " +
+        "window_size={} " +
+        "step_up_percentage={} " +
+        "step_down_percentage={} " +
+        "duration_limit={}ns " +
+        "step_down_percentage_aft={} " +
+        "max_steps_down_aft={} " +
+        "calc_type={} ",
+      url,
+      address,
+      bootGasPrice,
+      bootGasLimit,
+      maybeChainId.getOrElse("-"),
+      checkBalanceEveryInSeconds,
+      windowSize,
+      stepUpPercentage,
+      stepDownPercentage,
+      durationLimit,
+      stepDownPercentageAFT,
+      maxStepsDownAFT,
+      calcType
+    )
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
-      val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues()
+      val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues(durationLimit)
 
       var context = Context.empty
 
@@ -149,11 +196,14 @@ object BlockchainProcessors {
           gasPriceGauge.labels(namespace.value).set(gasPrice.toDouble)
           gasLimitGauge.labels(namespace.value).set(gasLimit.toDouble)
 
-          val currentCount = getCount(address)
+          val pendingNextCount = getCount(address, DefaultBlockParameterName.PENDING)
+          val latestNextCount = getCount(address)
 
-          val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, currentCount, maybeChainId, credentials)
+          logger.info("status=OK[get_nonce] next_count={} pendingNextCount={}", latestNextCount, pendingNextCount)
 
-          logger.info("Sending transaction := data={} count={} chain_id={} hex={} ", data, currentCount, maybeChainId.getOrElse("None"), hexMessage)
+          val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, latestNextCount, maybeChainId, credentials)
+
+          logger.info("status=OK[in_process] next_count={} pendingNextCount={} chain_id={} data={} hex={}", latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
 
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
@@ -167,7 +217,7 @@ object BlockchainProcessors {
               .addGasUsed(receipt.getGasUsed)
               .addCumulativeGasUsed(receipt.getCumulativeGasUsed)
 
-            logger.info("Got :={}", context.toString)
+            logger.info("status=OK[sent] {}", context.toString)
             Response.Added(txHash, data, namespace.value, networkInfo, networkType)
 
           }.getOrElse {
@@ -180,7 +230,7 @@ object BlockchainProcessors {
 
             timeoutsCounter.labels(namespace.value).inc()
 
-            logger.error("Timeout :={}", context.toString)
+            logger.error("status=KO[timeout] {}", context.toString)
             Response.Timeout(txHash, data, namespace.value, networkInfo, networkType)
 
           }
@@ -192,27 +242,46 @@ object BlockchainProcessors {
         }
 
       } catch {
-        case e: EthereumBlockchainException if !e.isCritical =>
-          val errorMessage = e.error.map(_.getMessage).getOrElse("No Message")
-          val errorCode = e.error.map(_.getCode).getOrElse(-99)
-          val errorData = e.error.map(_.getData).getOrElse("No Data")
-          logger.error("status=KO message={} error={} code={} data={} exceptionName={}", data, errorMessage, errorCode, errorData, e.getClass.getCanonicalName)
-          if (errorCode == -32010 && errorMessage.contains("Insufficient funds")) {
+        case _: GettingNonceException =>
+          logger.info("status=KO[getting_nonce] {}", context.toString)
+          Right(NeedForPauseException("Nonce", "Error getting next nonce"))
+        case e: SendingTXException =>
+          logger.error("status=KO[sending_tx] message={} error={} code={} data={} exceptionName={}", data, e.errorMessage, e.errorCode, e.errorData, e.getClass.getCanonicalName)
+          if (e.errorCode == -32010 && e.errorMessage.contains("Insufficient funds")) {
             logger.error("Insufficient funds current_balance={}", Balance.currentBalance)
             Left(Nil)
-          } else if (errorCode == -32000 && errorMessage.contains("intrinsic gas too low")) {
+          } else if (e.errorCode == -32000 && e.errorMessage.contains("intrinsic gas too low")) {
             logger.error("Seems that the Gas Limit is too low, try increasing it. gas_limit={}", gasLimit)
             Left(Nil)
-          } else if (errorCode == -32010 && errorMessage.contains("another transaction with same nonce")) {
-            Right(NeedForPauseException("Possible transaction running", errorMessage))
-          } else if (errorCode == -32000 && errorMessage.contains("replacement transaction underpriced")) {
-            Right(NeedForPauseException("Possible transaction running", errorMessage))
-          } else if (errorCode == -32000 && errorMessage.contains("nonce too low")) {
-            Right(NeedForPauseException("Nonce too low", errorMessage))
+          } else if (e.errorCode == -32010 && e.errorMessage.contains("another transaction with same nonce")) {
+            //We simulate a jump out to tell the calculator to increase and get unstuck
+
+            context = context
+              .addTxHashDuration(durationLimit.toLong + 1000L)
+              .addGasPrice(gasPrice)
+              .addGasLimit(gasLimit)
+
+            logger.info("status=KO[jump-simulation] {}", context.toString)
+
+            consumptionCalc.setJump(true)
+
+            Right(NeedForPauseException("Possible transaction running", e.errorMessage))
+
+          } else if (e.errorCode == -32000 && e.errorMessage.contains("replacement transaction underpriced")) {
+            Right(NeedForPauseException("Possible transaction running", e.errorMessage))
+          } else if (e.errorCode == -32000 && e.errorMessage.contains("nonce too low")) {
+            Right(NeedForPauseException("Nonce too low", e.errorMessage))
           } else Left(Nil)
+        case _: NoTXHashException =>
+          logger.info("status=KO[no_tx_hash] {}", context.toString)
+          Left(Nil)
+        case e: GettingTXReceiptException =>
+          logger.error("status=KO[getting_tx_receipt] message={} error={} code={} data={} exceptionName={}", data, e.errorMessage, e.errorCode, e.errorData, e.getClass.getCanonicalName)
+          Left(Nil)
         case e: Exception =>
           logger.error("Something critical happened: ", e)
           Right(e)
+
       } finally {
 
         txFeeGauge.labels(namespace.value).set(context.transactionFee.toDouble)
@@ -241,7 +310,7 @@ object BlockchainProcessors {
 
       def receipt: Option[TransactionReceipt] = {
         val getTransactionReceiptRequest = api.ethGetTransactionReceipt(txHash).send()
-        if (getTransactionReceiptRequest.hasError) throw GettingTXReceiptExceptionTXException("Error getting transaction receipt ", Option(getTransactionReceiptRequest.getError))
+        if (getTransactionReceiptRequest.hasError) throw GettingTXReceiptException("Error getting transaction receipt ", Option(getTransactionReceiptRequest.getError))
         getTransactionReceiptRequest.getTransactionReceipt.asScala
       }
 
@@ -255,7 +324,7 @@ object BlockchainProcessors {
           val maybeReceipt = receipt
 
           if (maybeReceipt.isEmpty) {
-            //logger.info("receipt_attempt={} sleep_in_millis={} ...", count, sleepInMillis)
+            logger.info("status=OK[waiting_receipt] receipt_attempt={} sleep_in_millis={}", count, sleepInMillis)
             val sleep = if (sleepInMillis <= 0) DEFAULT_SLEEP_MILLIS else sleepInMillis
             Thread.sleep(sleep)
             go(count - 1, sleep - 1000)
@@ -311,7 +380,7 @@ object BlockchainProcessors {
       (address, transactionCountResponse.getBalance)
     }
 
-    def shutdownHook(): Unit = {
+    sys.addShutdownHook {
       logger.info("Shutting down blockchain_processor_system={} and balance monitor", namespace.value)
       jmxManagement.unregisterMBean()
       balanceCancelable.cancel()

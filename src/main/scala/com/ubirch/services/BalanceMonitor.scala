@@ -23,7 +23,7 @@ trait BalanceMonitor extends WithExecutionContext with LazyLogging {
       registerNewBalance(newBalance)
       val curr = balance.get()
       val diff = curr - newBalance
-      logger.info("local_balance={} incoming_balance={} diff={} address={}", curr, newBalance, diff, address)
+      logger.info("status=OK[balance_update] local_balance={} incoming_balance={} diff={} address={}", curr, newBalance, diff, address)
       balance.set(newBalance)
     } catch {
       case e: Exception =>

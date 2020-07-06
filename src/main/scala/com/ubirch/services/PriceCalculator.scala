@@ -1,27 +1,8 @@
 package com.ubirch.services
 
-import java.lang.management.ManagementFactory
-import java.math.BigInteger
-
-import com.typesafe.scalalogging.LazyLogging
-import com.ubirch.services.BlockchainSystem.Namespace
-import javax.management.{ InstanceAlreadyExistsException, InstanceNotFoundException, ObjectName, StandardMBean }
-import org.apache.commons.math3.stat.descriptive.{ DescriptiveStatistics, SynchronizedDescriptiveStatistics }
+import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics
 
 import scala.language.postfixOps
-
-/**
-  * Represents a basic interface/trait for our blockchain jmx control
-  */
-trait BlockchainBean {
-  def getBootGasPrice: String
-  def getBootGasLimit: String
-  def getCurrentGasPrice: String
-  def getCurrentGasLimit: String
-
-  def gasPrice(newGasPrice: String): Unit
-  def gasLimit(newGasLimit: String): Unit
-}
 
 /**
   * Represents a data structure that allows easy packing for the basic
@@ -40,6 +21,59 @@ case class StatsData(
 )
 
 /**
+  * Basic abstraction for a consumption calc
+  */
+trait ConsumptionCalc {
+  val bootGasPrice: BigInt
+  val bootGasLimit: BigInt
+
+  private var currentGasPrice: BigInt = bootGasPrice
+  private var currentGasLimit: BigInt = bootGasLimit
+  private var jump: Boolean = false
+
+  val windowSize: Int
+
+  //stats points
+  val duration: DescriptiveStatistics = new DescriptiveStatistics
+  val price: DescriptiveStatistics = new DescriptiveStatistics
+  val limit: DescriptiveStatistics = new DescriptiveStatistics
+  val usedDelta: DescriptiveStatistics = new DescriptiveStatistics
+
+  def calcGasValues(td: Double = 55000000000L.toDouble, tu: Double = .85): (BigInt, BigInt)
+
+  def addStatistics(calculationPoint: StatsData): Unit = synchronized {
+    duration.addValue(calculationPoint.duration)
+    price.addValue(calculationPoint.price.toDouble)
+    limit.addValue(calculationPoint.limit.toDouble)
+    usedDelta.addValue(calculationPoint.usedDelta)
+  }
+
+  def setCurrentGasLimit(newGasLimit: BigInt): Unit = currentGasLimit = synchronized(newGasLimit)
+  def setCurrentGasPrice(newGasPrice: BigInt): Unit = currentGasPrice = synchronized(newGasPrice)
+  def setJump(value: Boolean): Unit = jump = synchronized(value)
+  def getCurrentGasLimit: BigInt = currentGasLimit
+  def getCurrentGasPrice: BigInt = currentGasPrice
+  def isJump: Boolean = jump
+
+  def clearWithGasPrice(newGasPrice: BigInt): Unit = synchronized {
+    duration.clear()
+    price.clear()
+    limit.clear()
+    usedDelta.clear()
+    currentGasPrice = newGasPrice
+    setJump(false)
+  }
+
+  def setWindows(windowSize: Int): Unit = {
+    duration.setWindowSize(windowSize)
+    price.setWindowSize(windowSize)
+    limit.setWindowSize(windowSize)
+    usedDelta.setWindowSize(windowSize)
+  }
+
+}
+
+/**
   * Represents a calculator aimed calculating the next possible
   * gas price
   *
@@ -48,115 +82,116 @@ case class StatsData(
   * @param windowSize Represents how many values will be taken into account for
   *                   calculating the statistics.
   */
-class ConsumptionCalc(val bootGasPrice: BigInt, val bootGasLimit: BigInt, windowSize: Int = 10, stepUpPercentage: Double = 110, stepDownPercentage: Double = 30) {
+class PersistentConsumptionCalc(
+    val bootGasPrice: BigInt,
+    val bootGasLimit: BigInt,
+    val windowSize: Int = 10,
+    stepUpPercentage: Double = 110,
+    stepDownPercentage: Double = 30,
+    stepDownPercentageAFT: Double = 90,
+    maxStepsDownAFT: Int = 3
+) extends ConsumptionCalc {
 
-  @volatile var currentGasPrice: BigInt = bootGasPrice
-  @volatile var currentGasLimit: BigInt = bootGasLimit
+  setWindows(windowSize)
 
-  val duration: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
-  duration.setWindowSize(windowSize)
-  val price: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
-  price.setWindowSize(windowSize)
-  val limit: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
-  limit.setWindowSize(windowSize)
-  val usedDelta: DescriptiveStatistics = new SynchronizedDescriptiveStatistics
-  usedDelta.setWindowSize(windowSize)
+  //calc funcs
+  private val calcPer: Double => Double => Double = percentage => price => (price * percentage) / 100
+  private val asBigInt: Double => BigInt = double => BigDecimal(double).toBigInt()
+  private val stepUp: Double => BigInt = calcPer(stepUpPercentage) andThen asBigInt
+  private val stepDown: Double => BigInt = calcPer(stepDownPercentage) andThen asBigInt
+  private val stepDownAFT: Double => BigInt = calcPer(stepDownPercentageAFT) andThen asBigInt
 
-  def addStatistics(calculationPoint: StatsData): Unit = {
-    duration.addValue(calculationPoint.duration)
-    price.addValue(calculationPoint.price.toDouble)
-    limit.addValue(calculationPoint.limit.toDouble)
-    usedDelta.addValue(calculationPoint.usedDelta)
+  private var lastGood: Double = -1
+  private var lastStepDownAFT: Double = maxStepsDownAFT
+
+  override def clearWithGasPrice(newGasPrice: BigInt): Unit = {
+    lastGood = -1
+    super.clearWithGasPrice(newGasPrice)
   }
-
-  def clearWithGasPrice(newGasPrice: BigInt): Unit = {
-    duration.clear()
-    price.clear()
-    limit.clear()
-    usedDelta.clear()
-    currentGasPrice = newGasPrice
-  }
-
-  def setCurrentGasPrice(newGasPrice: BigInt): Unit = currentGasPrice = newGasPrice
-
-  def setCurrentGasLimit(newGasLimit: BigInt): Unit = currentGasLimit = newGasLimit
-
-  val stepUp: Double => Double = price => (price * stepUpPercentage) / 100
-  val stepDown: Double => Double = price => (price * stepDownPercentage) / 100
-  val asBigInt: Double => BigInt = double => BigDecimal(double).toBigInt()
-  val goUp: Double => BigInt = stepUp andThen asBigInt
-  val goDown: Double => BigInt = stepDown andThen asBigInt
-
-  private var lg: Double = -1
 
   def calcGasValues(td: Double = 55000000000L.toDouble, tu: Double = .85): (BigInt, BigInt) = {
     val size = (duration.getN - 1).toInt
-
     if (size > 0) {
       val gpm = price.getGeometricMean
       val dn = duration.getElement(size)
 
       if ((dn > td) && usedDelta.getGeometricMean <= tu) {
+        //step up
         val pn_1 = price.getElement(size - 1)
-        lg = pn_1
-        setCurrentGasPrice(goUp(gpm))
-      } else if(lg > -1) {
-        setCurrentGasPrice(asBigInt(lg))
+        lastGood = pn_1
+        setCurrentGasPrice(stepUp(gpm))
+      } else if ((lastGood > -1) && lastStepDownAFT > 0) {
+        //This is step downs after first timeout
+        lastStepDownAFT = lastStepDownAFT - 1
+        setCurrentGasPrice(stepDownAFT(lastGood))
+      } else if (lastGood > -1) {
+        //steady
+        setCurrentGasPrice(asBigInt(lastGood))
       } else {
-        setCurrentGasPrice(goDown(gpm))
+        //step down
+        setCurrentGasPrice(stepDown(gpm))
       }
     }
 
-    (currentGasPrice, currentGasLimit)
+    if (getCurrentGasPrice <= 0) {
+      clearWithGasPrice(bootGasPrice)
+    }
+
+    (getCurrentGasPrice, getCurrentGasLimit)
   }
 
 }
 
-/**
-  * Represents the JMX Implementation for our system.
-  * @param namespace Represents the namespace for the JMX, which is the ethereum name
-  * @param consumptionCalc Represents an implementation of the consumption calculator.
-  */
-class BlockchainJmx(namespace: Namespace, consumptionCalc: ConsumptionCalc) extends LazyLogging {
+class ConservativeConsumptionCalc(
+    val bootGasPrice: BigInt,
+    val bootGasLimit: BigInt,
+    val windowSize: Int = 10,
+    stepUpPercentage: Double = 110,
+    stepDownPercentage: Double = 30
+) extends ConsumptionCalc {
 
-  private val mBeanServer = ManagementFactory.getPlatformMBeanServer
-  private val beanName = new ObjectName(s"com.ubirch.services.blockchain:type=Balance,name=${namespace.value}")
+  setWindows(windowSize)
 
-  def createBean(): Unit = {
+  //calc funcs
+  private val calcPer: Double => Double => Double = percentage => price => (price * percentage) / 100
+  private val asBigInt: Double => BigInt = double => BigDecimal(double).toBigInt()
+  private val stepUp: Double => BigInt = calcPer(stepUpPercentage) andThen asBigInt
+  private val stepDown: Double => BigInt = calcPer(stepDownPercentage) andThen asBigInt
 
-    val mbean = new StandardMBean(classOf[BlockchainBean]) with BlockchainBean {
-      override def getBootGasPrice: String = consumptionCalc.bootGasPrice.toString()
-      override def getBootGasLimit: String = consumptionCalc.bootGasLimit.toString()
-      override def getCurrentGasPrice: String = consumptionCalc.currentGasPrice.toString()
-      override def getCurrentGasLimit: String = consumptionCalc.currentGasLimit.toString()
-      override def gasPrice(newGasPrice: String): Unit = {
-        logger.info("Setting new GasPrice={}", newGasPrice)
-        consumptionCalc.clearWithGasPrice(new BigInteger(newGasPrice))
-      }
-      override def gasLimit(newGasLimit: String): Unit = {
-        logger.info("Setting new GasLimit={}", newGasLimit)
-        consumptionCalc.setCurrentGasLimit(new BigInteger(newGasLimit))
-      }
-    }
+  private var lastGood: Double = -1
 
-    try {
-      mBeanServer.registerMBean(mbean, beanName)
-      logger.info("Registered blockchain JMX MBean [{}]", beanName)
-    } catch {
-      case _: InstanceAlreadyExistsException =>
-        logger.warn(s"Could not register Blockchain JMX MBean with name=$beanName as it is already registered. ")
-    }
-
+  override def clearWithGasPrice(newGasPrice: BigInt): Unit = {
+    lastGood = -1
+    super.clearWithGasPrice(newGasPrice)
   }
 
-  def unregisterMBean(): Unit = {
-    try {
-      mBeanServer.unregisterMBean(beanName)
-    } catch {
-      case _: InstanceNotFoundException =>
-        logger.warn(s"Could not unregister Cluster JMX MBean with name=$beanName as it was not found.")
+  def calcGasValues(td: Double = 50000000000L.toDouble, tu: Double = .85): (BigInt, BigInt) = {
+
+    if (isJump) {
+      clearWithGasPrice(bootGasPrice)
+    } else {
+      val size = (duration.getN - 1).toInt
+      if (size > 0) {
+        val gpm = price.getGeometricMean
+        val dn = duration.getElement(size)
+
+        if ((dn > td) && usedDelta.getGeometricMean <= tu) {
+          val pn_1 = price.getElement(size - 1)
+          lastGood = pn_1
+          setCurrentGasPrice(stepUp(gpm))
+        } else if (lastGood > -1) {
+          setCurrentGasPrice(asBigInt(lastGood))
+        } else {
+          setCurrentGasPrice(stepDown(gpm))
+        }
+      }
     }
 
+    if (getCurrentGasPrice <= 0) {
+      clearWithGasPrice(bootGasPrice)
+    }
+
+    (getCurrentGasPrice, getCurrentGasLimit)
   }
 
 }

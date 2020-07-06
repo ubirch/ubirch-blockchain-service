@@ -1,6 +1,7 @@
 package com.ubirch
 package services
 
+import com.ubirch.jmx.BucketJmx
 import com.ubirch.kafka.express.{ ConfigBase, ExpressKafkaApp }
 import com.ubirch.models.{ Response, TransactionMetrics }
 import org.apache.kafka.common.serialization.{ Deserializer, Serializer, StringDeserializer, StringSerializer }
@@ -19,6 +20,7 @@ object ConfPaths {
   val CONSUMER_MAX_POLL_RECORDS = "blockchainAnchoring.kafkaConsumer.maxPollRecords"
   val CONSUMER_GRACEFUL_TIMEOUT = "blockchainAnchoring.kafkaConsumer.gracefulTimeout"
   val METRICS_SUB_NAMESPACE = "blockchainAnchoring.kafkaConsumer.metricsSubNamespace"
+  val MAX_TIME_AGGREGATION_SECONDS = "blockchainAnchoring.kafkaConsumer.maxTimeAggregationSeconds"
   val CONSUMER_RECONNECT_BACKOFF_MS_CONFIG = "blockchainAnchoring.kafkaConsumer.reconnectBackoffMsConfig"
   val CONSUMER_RECONNECT_BACKOFF_MAX_MS_CONFIG = "blockchainAnchoring.kafkaConsumer.reconnectBackoffMaxMsConfig"
 
@@ -28,6 +30,15 @@ object ConfPaths {
 
   val PROMETHEUS_PORT = "blockchainAnchoring.metrics.prometheus.port"
 
+}
+
+/**
+  * Class to safely modify state
+  * @param value the value of flush
+  */
+case class Flush(private var value: Boolean) {
+  def setValue(newValue: Boolean): Unit = synchronized(value = newValue)
+  def getValue: Boolean = synchronized(value)
 }
 
 /**
@@ -58,14 +69,16 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
 
   lazy val blockchain: BlockchainProcessor[String] = getProcessor(namespace)
 
-  lazy val flush: Boolean = conf.getBoolean("flush")
+  val flush: Flush = Flush(conf.getBoolean("flush"))
+  final val bucketJmx = new BucketJmx(namespace, flush)
+  bucketJmx.createBean()
 
   logger.info("Configured namespace={}", namespace.value)
   logger.info("Configured blockchain_processor={}", Option(blockchain.getClass.getCanonicalName).getOrElse("Custom Processor"))
 
   override val process: Process = Process { consumerRecords =>
 
-    if (!flush) {
+    if (!flush.getValue) {
       val data = consumerRecords.map(x => x.value())
       blockchain.process(data) match {
         case Left(responses) =>
@@ -87,6 +100,11 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
 
   }
 
+  sys.addShutdownHook {
+    logger.info("Shutting down bucket_picker={}", namespace.value)
+    bucketJmx.unregisterMBean()
+  }
+
 }
 
 /**
@@ -103,13 +121,13 @@ trait Bucket extends ExpressKafkaApp[String, String, Unit] {
   override val consumerGroupId: String = conf.getString(ConfPaths.CONSUMER_GROUP_ID)
   override val consumerMaxPollRecords: Int = conf.getInt(ConfPaths.CONSUMER_MAX_POLL_RECORDS)
   override val consumerGracefulTimeout: Int = conf.getInt(ConfPaths.CONSUMER_GRACEFUL_TIMEOUT)
+  override val maxTimeAggregationSeconds: Long = conf.getInt(ConfPaths.MAX_TIME_AGGREGATION_SECONDS)
   override val producerBootstrapServers: String = conf.getString(ConfPaths.PRODUCER_BOOTSTRAP_SERVERS)
   override val metricsSubNamespace: String = conf.getString(ConfPaths.METRICS_SUB_NAMESPACE)
   override val consumerReconnectBackoffMsConfig: Long = conf.getLong(ConfPaths.CONSUMER_RECONNECT_BACKOFF_MS_CONFIG)
   override val consumerReconnectBackoffMaxMsConfig: Long = conf.getLong(ConfPaths.CONSUMER_RECONNECT_BACKOFF_MAX_MS_CONFIG)
   override val lingerMs: Int = conf.getInt(ConfPaths.LINGER_MS)
 
-  override def prefix: String = "ubirch_identity"
+  override def prefix: String = "ubirch_blockchain"
 
-  override val maxTimeAggregationSeconds: Long = 120
 }
