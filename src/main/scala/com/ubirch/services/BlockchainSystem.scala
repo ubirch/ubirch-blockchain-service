@@ -203,7 +203,7 @@ object BlockchainProcessors {
 
           val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, latestNextCount, maybeChainId, credentials)
 
-          logger.info("status=OK[in_process] next_count={} pendingNextCount={} chain_id={} data={} hex={}", latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
+          logger.info("status=OK[in_process] gas_price={} gas_limit={} next_count={} pendingNextCount={} chain_id={} data={} hex={}", gasPrice, gasLimit, latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
 
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
