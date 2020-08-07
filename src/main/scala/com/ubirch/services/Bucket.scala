@@ -88,7 +88,7 @@ trait BucketPicker extends TransactionMetrics with ConfigBase {
             //totally OK to just let go and continue with other values.
           } else {
             successCounter.labels(namespace.value).inc()
-            responses.map { res =>
+            responses.foreach { res =>
               producerTopics.map(topic => send(topic, stringify(toJValue[Response](res))))
             }
           }
@@ -121,7 +121,7 @@ trait Bucket extends ExpressKafkaApp[String, String, Unit] {
   override val consumerGroupId: String = conf.getString(ConfPaths.CONSUMER_GROUP_ID)
   override val consumerMaxPollRecords: Int = conf.getInt(ConfPaths.CONSUMER_MAX_POLL_RECORDS)
   override val consumerGracefulTimeout: Int = conf.getInt(ConfPaths.CONSUMER_GRACEFUL_TIMEOUT)
-  override val maxTimeAggregationSeconds: Long = conf.getInt(ConfPaths.MAX_TIME_AGGREGATION_SECONDS)
+  override val maxTimeAggregationSeconds: Long = conf.getLong(ConfPaths.MAX_TIME_AGGREGATION_SECONDS)
   override val producerBootstrapServers: String = conf.getString(ConfPaths.PRODUCER_BOOTSTRAP_SERVERS)
   override val metricsSubNamespace: String = conf.getString(ConfPaths.METRICS_SUB_NAMESPACE)
   override val consumerReconnectBackoffMsConfig: Long = conf.getLong(ConfPaths.CONSUMER_RECONNECT_BACKOFF_MS_CONFIG)
