@@ -88,7 +88,7 @@
         <dependency>
             <groupId>com.ubirch</groupId>
             <artifactId>ubirch-kafka-express</artifactId>
-            <version>1.2.11-SNAPSHOT</version>
+            <version>1.2.12-SNAPSHOT</version>
         </dependency>
 
         <dependency>
@@ -194,7 +194,6 @@
         </dependency>
 
     </dependencies>
-
 
     <build>
 
