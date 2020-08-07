@@ -2,8 +2,6 @@ package com.ubirch.services
 
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics
 
-import scala.language.postfixOps
-
 /**
   * Represents a data structure that allows easy packing for the basic
   * statistics points
@@ -42,7 +40,7 @@ trait ConsumptionCalc {
   def calcGasValues(td: Double = 55000000000L.toDouble, tu: Double = .85): (BigInt, BigInt)
 
   def addStatistics(calculationPoint: StatsData): Unit = synchronized {
-    duration.addValue(calculationPoint.duration)
+    duration.addValue(calculationPoint.duration.toDouble)
     price.addValue(calculationPoint.price.toDouble)
     limit.addValue(calculationPoint.limit.toDouble)
     usedDelta.addValue(calculationPoint.usedDelta)
@@ -102,7 +100,7 @@ class PersistentConsumptionCalc(
   private val stepDownAFT: Double => BigInt = calcPer(stepDownPercentageAFT) andThen asBigInt
 
   private var lastGood: Double = -1
-  private var lastStepDownAFT: Double = maxStepsDownAFT
+  private var lastStepDownAFT: Double = maxStepsDownAFT.toDouble
 
   override def clearWithGasPrice(newGasPrice: BigInt): Unit = {
     lastGood = -1

@@ -105,14 +105,14 @@ object BlockchainProcessors {
     final val networkType = config.getString("networkType")
     final val maybeChainId = Try(config.getLong("chainId")).filter(_ > 0).toOption
     final val url = config.getString("url")
-    final val DEFAULT_SLEEP_MILLIS = config.getInt("defaultSleepMillisForReceipt")
+    final val DEFAULT_SLEEP_MILLIS = config.getLong("defaultSleepMillisForReceipt")
     final val MAX_RECEIPT_ATTEMPTS = config.getInt("maxReceiptAttempts")
     final val checkBalanceEveryInSeconds = config.getInt("checkBalanceEveryInSeconds")
     final val windowSize: Int = config.getInt("windowSize")
     final val stepUpPercentage: Double = config.getDouble("stepUpPercentage")
     final val stepDownPercentage: Double = config.getDouble("stepDownPercentage")
     final val durationLimit: Double = config.getDouble("durationLimit")
-    final val stepDownPercentageAFT: Double = config.getInt("stepDownPercentageAFT")
+    final val stepDownPercentageAFT: Double = config.getDouble("stepDownPercentageAFT")
     final val maxStepsDownAFT: Int = config.getInt("maxStepsDownAFT")
     final val calcType: String = config.getString("calcType")
 
@@ -287,7 +287,7 @@ object BlockchainProcessors {
         txFeeGauge.labels(namespace.value).set(context.transactionFee.toDouble)
         gasUsedGauge.labels(namespace.value).set(context.gasUsed.toDouble)
         usedDeltaGauge.labels(namespace.value).set(context.usedDelta)
-        txTimeGauge.labels(namespace.value).set(context.txHashDuration)
+        txTimeGauge.labels(namespace.value).set(context.txHashDuration.toDouble)
       }
 
     }
@@ -315,7 +315,7 @@ object BlockchainProcessors {
       }
 
       @tailrec
-      def go(count: Int, sleepInMillis: Int = DEFAULT_SLEEP_MILLIS): Option[TransactionReceipt] = {
+      def go(count: Int, sleepInMillis: Long = DEFAULT_SLEEP_MILLIS): Option[TransactionReceipt] = {
 
         if (count == 0)
           None
@@ -523,7 +523,7 @@ object BlockchainProcessors {
           val timedTransactionsAndMessages = Time.time(response.getTransactions.asScala.toList.zip(data))
           val responses = timedTransactionsAndMessages.result.map { case (tx, data) =>
             logger.info("Got transaction_hash={} time_used={}ns", tx.getHash, timedTransactionsAndMessages.elapsed)
-            txTimeGauge.labels(namespace.value).set(timedTransactionsAndMessages.elapsed)
+            txTimeGauge.labels(namespace.value).set(timedTransactionsAndMessages.elapsed.toDouble)
 
             Response.Added(tx.getHash, data, namespace.value, networkInfo, networkType)
           }
