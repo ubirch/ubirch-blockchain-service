@@ -46,7 +46,7 @@
         <timestamp>${maven.build.timestamp}</timestamp>
         <maven.build.timestamp.format>yyyyMMddHHmm</maven.build.timestamp.format>
 
-        <scala.version>2.12.6</scala.version>
+        <scala.version>2.12.8</scala.version>
         <scala.compat.version>2.12</scala.compat.version>
         <scalatest.version>3.0.5</scalatest.version>
         <json4s-native.version>3.6.0</json4s-native.version>
