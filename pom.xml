@@ -111,8 +111,8 @@
 
         <dependency>
             <groupId>org.iota</groupId>
-            <artifactId>jota</artifactId>
-            <version>1.0.0-beta8</version>
+            <artifactId>iota-native-java</artifactId>
+            <version>0.1.0</version>
         </dependency>
 
         <dependency>
@@ -198,6 +198,46 @@
     <build>
 
         <plugins>
+
+	 <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>1.6.0</version>
+                <executions>
+                    <execution>
+                        <id>some-execution</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <executable>${basedir}/build-iota.sh</executable>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-install-plugin</artifactId>
+                <version>2.5.1</version>
+                <configuration>
+                    <groupId>org.iota</groupId>
+                    <artifactId>iota-native-java</artifactId>
+                    <version>0.1.0</version>
+                    <packaging>jar</packaging>
+                    <file>${basedir}/iota-native/native/build/libs/native.jar</file>
+                    <generatePom>true</generatePom>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>install-jar-lib</id>
+                        <goals>
+                            <goal>install-file</goal>
+                        </goals>
+                        <phase>validate</phase>
+                    </execution>
+                </executions>
+            </plugin>
 
             <!-- code formatting -->
             <plugin>

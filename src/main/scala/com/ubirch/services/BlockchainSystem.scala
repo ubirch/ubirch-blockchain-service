@@ -10,10 +10,11 @@ import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }
 import com.ubirch.util.Exceptions._
 import com.ubirch.util.Time
+import org.iota.client.Client
+import org.iota.client.local.NativeAPI
 import org.slf4j.LoggerFactory
 
 import scala.annotation.tailrec
-import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
 import scala.concurrent.blocking
 import scala.concurrent.duration._
@@ -468,29 +469,16 @@ object BlockchainProcessors {
     with ConfigBase
     with LazyLogging {
 
-    import org.iota.jota.IotaAPI
-    import org.iota.jota.model.Transfer
-    import org.iota.jota.utils.TrytesConverter
-
     final val config = Try(conf.getConfig("blockchainAnchoring." + namespace.value)).getOrElse(throw NoConfigObjectFoundException("No object found for this blockchain=" + namespace.value))
     final val urlAsString = config.getString("url")
-    final val address = config.getString("toAddress")
-    final val addressChecksum = config.getString("toAddressChecksum")
-    final val completeAddress = address + addressChecksum
-    final val depth = config.getInt("depth")
-    final val seed = config.getString("seed")
-    final val securityLevel = config.getInt("securityLevel")
-    final val minimumWeightMagnitude = config.getInt("minimumWeightMagnitude")
     final val tag = config.getString("tag")
     final val networkInfo = config.getString("networkInfo")
     final val networkType = config.getString("networkType")
-
     final val url = new URL(urlAsString)
-    final val api = new IotaAPI.Builder()
-      .protocol(url.getProtocol)
-      .host(url.getHost)
-      .port(url.getPort)
-      .build()
+
+    checkLink()
+
+    def api: Client = Client.Builder.withNode(url.toString).finish()
 
     override def process(data: Seq[String]): Either[Seq[Response], Throwable] = {
 
@@ -498,53 +486,36 @@ object BlockchainProcessors {
         Left(Nil)
       } else {
 
-        logger.info("transfer_data={}", data.mkString(", "))
-
         try {
 
-          val transfers = data.map { x =>
-            val trytes = TrytesConverter.asciiToTrytes(x) // Note: if message > 2187 Trytes, it is sent in several transactions
-            new Transfer(completeAddress, 0, trytes, tag)
-          }
+          val responses = data.map { message =>
 
-          val response = api.sendTransfer(
-            seed,
-            securityLevel,
-            depth,
-            minimumWeightMagnitude,
-            transfers.asJava,
-            null,
-            null,
-            false,
-            false,
-            null
-          )
+            logger.info("transfer_message={}", message)
 
-          val timedTransactionsAndMessages = Time.time(response.getTransactions.asScala.toList.zip(data))
-          val responses = timedTransactionsAndMessages.result.map { case (tx, data) =>
-            logger.info("Got transaction_hash={} time_used={}ns", tx.getHash, timedTransactionsAndMessages.elapsed)
+            val timedTransactionsAndMessages = Time.time(api.message.withIndexString(tag + message).withDataString(message).finish)
+            val responses = timedTransactionsAndMessages.result
+
+            logger.info("transfer_hash={} time_used={}ns", responses.id().toString, timedTransactionsAndMessages.elapsed)
             txTimeGauge.labels(namespace.value).set(timedTransactionsAndMessages.elapsed.toDouble)
 
-            Response.Added(tx.getHash, data, namespace.value, networkInfo, networkType)
+            Response.Added(responses.id().toString, message, namespace.value, networkInfo, networkType)
+
           }
 
           Left(responses)
-        } catch {
-          case e: org.iota.jota.error.ConnectorException =>
-            logger.error("status=KO message={} error={} code={} exceptionName={}", data.mkString(", "), e.getMessage, e.getErrorCode, e.getClass.getCanonicalName)
-            Right(pauseFold('ConnectorException, 30)(e, NeedForPauseException("Jota ConnectorException", e.getMessage)))
-          case e: org.iota.jota.error.InternalException =>
-            logger.error("status=KO message={} error={} exceptionName={}", data.mkString(", "), e.getMessage, e.getClass.getCanonicalName)
-            Right(pauseFold('InternalException, 30)(e, NeedForPauseException("Jota InternalException", e.getMessage)))
-          case e: Exception =>
-            logger.error("Something critical happened: ", e)
-            Right(e)
 
+        } catch {
+          case e: org.iota.client.local.ClientException =>
+            logger.error("status=KO message={} error={} exceptionName={}", data.mkString(", "), e.getMessage, e.getClass.getCanonicalName)
+            Right(pauseFold('ConnectorException, 3)(e, NeedForPauseException("Jota ConnectorException", e.getMessage)))
+          case e: Exception =>
+            logger.error("Something unexpected happened: ", e)
+            Right(e)
         }
       }
     }
 
-    def balance(threshold: Int = 100 /*based on confirmed transactions*/ ): Long = api.getBalance(threshold, completeAddress)
+    def checkLink(): Unit = NativeAPI.verifyLink()
 
   }
 
