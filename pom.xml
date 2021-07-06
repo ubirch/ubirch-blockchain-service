@@ -109,11 +109,11 @@
             <version>4.6.0</version>
         </dependency>
 
-        <dependency>
-            <groupId>org.iota</groupId>
-            <artifactId>iota-native-java</artifactId>
-            <version>0.1.0</version>
-        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>org.iota</groupId>-->
+<!--            <artifactId>iota-native-java</artifactId>-->
+<!--            <version>0.1.0</version>-->
+<!--        </dependency>-->
 
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
@@ -196,48 +196,75 @@
     </dependencies>
 
     <build>
-
         <plugins>
-
-	 <plugin>
+            <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>1.6.0</version>
                 <executions>
                     <execution>
-                        <id>some-execution</id>
-                        <phase>initialize</phase>
+                        <id>build-iota-native</id>
+                        <phase>validate</phase>
                         <goals>
                             <goal>exec</goal>
                         </goals>
+                        <configuration>
+                            <executable>${basedir}/build-iota.sh</executable>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>clean-iota-native</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${basedir}/clean-iota.sh</executable>
+                        </configuration>
                     </execution>
                 </executions>
-                <configuration>
-                    <executable>${basedir}/build-iota.sh</executable>
-                </configuration>
             </plugin>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-install-plugin</artifactId>
-                <version>2.5.1</version>
-                <configuration>
-                    <groupId>org.iota</groupId>
-                    <artifactId>iota-native-java</artifactId>
-                    <version>0.1.0</version>
-                    <packaging>jar</packaging>
-                    <file>${basedir}/iota-native/native/build/libs/native.jar</file>
-                    <generatePom>true</generatePom>
-                </configuration>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.2.0</version>
                 <executions>
                     <execution>
-                        <id>install-jar-lib</id>
+                        <id>add-source</id>
+                        <phase>generate-sources</phase>
                         <goals>
-                            <goal>install-file</goal>
+                            <goal>add-source</goal>
                         </goals>
-                        <phase>validate</phase>
+                        <configuration>
+                            <sources>
+                                <source>${basedir}/iota.rs/bindings/java/native/src/main</source>
+                            </sources>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
+<!--            <plugin>-->
+<!--                <groupId>org.apache.maven.plugins</groupId>-->
+<!--                <artifactId>maven-install-plugin</artifactId>-->
+<!--                <version>2.5.1</version>-->
+<!--                <configuration>-->
+<!--                    <groupId>org.iota</groupId>-->
+<!--                    <artifactId>iota-native-java</artifactId>-->
+<!--                    <version>0.1.0</version>-->
+<!--                    <packaging>jar</packaging>-->
+<!--                    <file>${basedir}/iota-native/native/build/libs/native.jar</file>-->
+<!--                    <generatePom>true</generatePom>-->
+<!--                </configuration>-->
+<!--                <executions>-->
+<!--                    <execution>-->
+<!--                        <id>install-jar-lib</id>-->
+<!--                        <goals>-->
+<!--                            <goal>install-file</goal>-->
+<!--                        </goals>-->
+<!--                        <phase>validate</phase>-->
+<!--                    </execution>-->
+<!--                </executions>-->
+<!--            </plugin>-->
 
             <!-- code formatting -->
             <plugin>

@@ -492,7 +492,8 @@ object BlockchainProcessors {
 
             logger.info("transfer_message={}", message)
 
-            val timedTransactionsAndMessages = Time.time(api.message.withIndexString(tag + message).withDataString(message).finish)
+            val index = (tag + message).take(20)
+            val timedTransactionsAndMessages = Time.time(api.message.withIndexString(index).withDataString(message).finish)
             val responses = timedTransactionsAndMessages.result
 
             logger.info("transfer_hash={} time_used={}ns", responses.id().toString, timedTransactionsAndMessages.elapsed)
