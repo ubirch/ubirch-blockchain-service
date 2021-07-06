@@ -480,6 +480,8 @@ object BlockchainProcessors {
 
     def api: Client = Client.Builder.withNode(url.toString).finish()
 
+    logger.info("Basic values := url={} tag={}", url.toString, tag)
+
     override def process(data: Seq[String]): Either[Seq[Response], Throwable] = {
 
       if (data.isEmpty) {
@@ -490,13 +492,13 @@ object BlockchainProcessors {
 
           val responses = data.map { message =>
 
-            logger.info("transfer_message={}", message)
+            logger.info("status=OK[in_process]={}", message)
 
             val index = (tag + message).take(20)
             val timedTransactionsAndMessages = Time.time(api.message.withIndexString(index).withDataString(message).finish)
             val responses = timedTransactionsAndMessages.result
 
-            logger.info("transfer_hash={} time_used={}ns", responses.id().toString, timedTransactionsAndMessages.elapsed)
+            logger.info("status=OK[sent]:{} time_used={}ns", responses.id().toString, timedTransactionsAndMessages.elapsed)
             txTimeGauge.labels(namespace.value).set(timedTransactionsAndMessages.elapsed.toDouble)
 
             Response.Added(responses.id().toString, message, namespace.value, networkInfo, networkType)
@@ -507,7 +509,7 @@ object BlockchainProcessors {
 
         } catch {
           case e: org.iota.client.local.ClientException =>
-            logger.error("status=KO message={} error={} exceptionName={}", data.mkString(", "), e.getMessage, e.getClass.getCanonicalName)
+            logger.error("status=KO[ClientException] message={} error={} exceptionName={}", data.mkString(", "), e.getMessage, e.getClass.getCanonicalName)
             Right(pauseFold('ConnectorException, 3)(e, NeedForPauseException("Jota ConnectorException", e.getMessage)))
           case e: Exception =>
             logger.error("Something unexpected happened: ", e)
