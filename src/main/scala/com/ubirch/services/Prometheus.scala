@@ -16,7 +16,7 @@ trait Prometheus extends LazyLogging {
 
     logger.debug("Creating Prometheus Server on Port[{}]", port)
 
-    val server: HTTPServer = PrometheusMetricsHelper.create(port)
+    val server: HTTPServer = PrometheusMetricsHelper.default(port)
 
   }
 
