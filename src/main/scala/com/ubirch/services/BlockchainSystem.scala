@@ -10,6 +10,7 @@ import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }
 import com.ubirch.util.Exceptions._
 import com.ubirch.util.Time
+import monix.eval.Task
 import org.iota.client.Client
 import org.iota.client.local.NativeAPI
 import org.slf4j.LoggerFactory
@@ -478,7 +479,7 @@ object BlockchainProcessors {
 
     checkLink()
 
-    def api: Client = Client.Builder.withNode(url.toString).finish()
+    val api: Client = Client.Builder.withNode(url.toString).finish()
 
     logger.info("Basic values := url={} tag={}", url.toString, tag)
 
@@ -495,11 +496,10 @@ object BlockchainProcessors {
             logger.info("status=OK[in_process]={}", message)
 
             val index = (tag + message).take(20)
-            val timedTransactionsAndMessages = Time.time(api.message.withIndexString(index).withDataString(message).finish)
-            val responses = timedTransactionsAndMessages.result
+            val (duration, responses) = send(index, message)
 
-            logger.info("status=OK[sent]:{} time_used={}ns", responses.id().toString, timedTransactionsAndMessages.elapsed)
-            txTimeGauge.labels(namespace.value).set(timedTransactionsAndMessages.elapsed.toDouble)
+            logger.info("status=OK[sent]:{} time_used={}mills", responses.id().toString, duration.toMillis)
+            txTimeGauge.labels(namespace.value).set(duration.toNanos.toDouble)
 
             Response.Added(responses.id().toString, message, namespace.value, networkInfo, networkType)
 
@@ -516,6 +516,18 @@ object BlockchainProcessors {
             Right(e)
         }
       }
+    }
+
+    def send(index: String, message: String) = {
+      import monix.execution.Scheduler.Implicits.global
+      import scala.concurrent.duration._
+
+      val deadline = 55.seconds
+
+      Task.delay(api.message.withIndexString(index).withDataString(message).finish)
+        .timed
+        .runSyncUnsafe(deadline)
+
     }
 
     def checkLink(): Unit = NativeAPI.verifyLink()
