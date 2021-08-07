@@ -1,0 +1,66 @@
+FROM buildpack-deps:buster as builder
+
+#C compiler needed in rust compile
+RUN apt-get -qq update && \
+    apt-get -y install libclang-dev && \
+    apt-get -y install clang
+
+#This is copy of the latest rust docker image
+#https://github.com/rust-lang/docker-rust/blob/master/1.54.0/buster/Dockerfile
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH \
+    RUST_VERSION=1.54.0
+
+RUN set -eux; \
+    dpkgArch="$(dpkg --print-architecture)"; \
+    case "${dpkgArch##*-}" in \
+        amd64) rustArch='x86_64-unknown-linux-gnu'; rustupSha256='3dc5ef50861ee18657f9db2eeb7392f9c2a6c95c90ab41e45ab4ca71476b4338' ;; \
+        armhf) rustArch='armv7-unknown-linux-gnueabihf'; rustupSha256='67777ac3bc17277102f2ed73fd5f14c51f4ca5963adadf7f174adf4ebc38747b' ;; \
+        arm64) rustArch='aarch64-unknown-linux-gnu'; rustupSha256='32a1532f7cef072a667bac53f1a5542c99666c4071af0c9549795bbdb2069ec1' ;; \
+        i386) rustArch='i686-unknown-linux-gnu'; rustupSha256='e50d1deb99048bc5782a0200aa33e4eea70747d49dffdc9d06812fd22a372515' ;; \
+        *) echo >&2 "unsupported architecture: ${dpkgArch}"; exit 1 ;; \
+    esac; \
+    url="https://static.rust-lang.org/rustup/archive/1.24.3/${rustArch}/rustup-init"; \
+    wget "$url"; \
+    echo "${rustupSha256} *rustup-init" | sha256sum -c -; \
+    chmod +x rustup-init; \
+    ./rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION --default-host ${rustArch}; \
+    rm rustup-init; \
+    chmod -R a+w $RUSTUP_HOME $CARGO_HOME; \
+    rustup --version; \
+    cargo --version; \
+    rustc --version;
+
+#This is a copy of the latest version of java 8 zulu
+#https://github.com/zulu-openjdk/zulu-openjdk/blob/master/8u302-8.56.0.21/Dockerfile
+ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
+
+ARG ZULU_REPO_VER=1.0.0-2
+
+RUN apt-get -qq update && \
+    apt-get -qq -y --no-install-recommends install gnupg software-properties-common locales curl && \
+    locale-gen en_US.UTF-8 && \
+    apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 0x219BD9C9 && \
+    curl -sLO https://cdn.azul.com/zulu/bin/zulu-repo_${ZULU_REPO_VER}_all.deb && dpkg -i zulu-repo_${ZULU_REPO_VER}_all.deb && \
+    apt-get -qq update && \
+    apt-get -qq -y dist-upgrade && \
+    mkdir -p /usr/share/man/man1 && \
+    apt-get -qq -y --no-install-recommends install zulu8-jdk=8.0.302-* && \
+    apt-get -qq -y purge gnupg software-properties-common curl && \
+    apt -y autoremove && \
+    rm -rf /var/lib/apt/lists/* zulu-repo_${ZULU_REPO_VER}_all.deb
+
+ENV JAVA_HOME=/usr/lib/jvm/zulu8-ca-amd64
+
+#Actual build of the rust libs into java
+COPY . /build
+WORKDIR /build
+
+ARG IOTA_HOME=iota.rs
+ARG IOTA_JAVA_BINDING=${IOTA_HOME}/bindings/java/native
+ARG IOTA_JAVA_RELEASE=${IOTA_HOME}/bindings/java/target/release
+
+RUN git clone https://github.com/iotaledger/iota.rs ${IOTA_HOME} && \
+    cd ${IOTA_JAVA_BINDING} && \
+    cargo build --release
