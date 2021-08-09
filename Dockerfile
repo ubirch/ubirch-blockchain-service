@@ -1,9 +1,10 @@
-FROM ubirch/java
+FROM azul/zulu-openjdk:8u302-8.56.0.21
 ARG JAR_LIBS
 ARG JAR_FILE
 ARG VERSION
 ARG BUILD
 ARG SERVICE_NAME
+ARG LIB_PATH=lib/bindings/java/iota-release
 
 LABEL "com.ubirch.service"="${SERVICE_NAME}"
 LABEL "com.ubirch.version"="${VERSION}"
@@ -39,7 +40,7 @@ ENTRYPOINT \
   -jar /usr/share/service/main.jar
 
 # Add iota-native libs
-COPY lib/bindings/java/iota-release /usr/share/service/lib/iota-release
+COPY ${LIB_PATH} /usr/share/service/lib/iota-release
 
 # Add Maven dependencies (not shaded into the artifact; Docker-cached)
 COPY ${JAR_LIBS} /usr/share/service/lib

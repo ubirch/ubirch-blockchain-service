@@ -27,10 +27,6 @@
 
     <repositories>
         <repository>
-            <id>jitpack.io</id>
-            <url>https://jitpack.io</url>
-        </repository>
-        <repository>
             <id>ossrh</id>
             <url>https://oss.sonatype.org/content/repositories/snapshots</url>
         </repository>
@@ -116,12 +112,6 @@
             <version>4.6.0</version>
         </dependency>
 
-<!--        <dependency>-->
-<!--            <groupId>org.iota</groupId>-->
-<!--            <artifactId>iota-native-java</artifactId>-->
-<!--            <version>0.1.0</version>-->
-<!--        </dependency>-->
-
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
@@ -204,75 +194,6 @@
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>1.6.0</version>
-                <executions>
-                    <execution>
-                        <id>build-iota-native</id>
-                        <phase>validate</phase>
-                        <goals>
-                            <goal>exec</goal>
-                        </goals>
-                        <configuration>
-                            <executable>${basedir}/build-iota.sh</executable>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>clean-iota-native</id>
-                        <phase>clean</phase>
-                        <goals>
-                            <goal>exec</goal>
-                        </goals>
-                        <configuration>
-                            <executable>${basedir}/clean-iota.sh</executable>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <version>3.2.0</version>
-                <executions>
-                    <execution>
-                        <id>add-source</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>add-source</goal>
-                        </goals>
-                        <configuration>
-                            <sources>
-                                <source>${basedir}/iota.rs/bindings/java/native/src/main</source>
-                            </sources>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-<!--            <plugin>-->
-<!--                <groupId>org.apache.maven.plugins</groupId>-->
-<!--                <artifactId>maven-install-plugin</artifactId>-->
-<!--                <version>2.5.1</version>-->
-<!--                <configuration>-->
-<!--                    <groupId>org.iota</groupId>-->
-<!--                    <artifactId>iota-native-java</artifactId>-->
-<!--                    <version>0.1.0</version>-->
-<!--                    <packaging>jar</packaging>-->
-<!--                    <file>${basedir}/iota-native/native/build/libs/native.jar</file>-->
-<!--                    <generatePom>true</generatePom>-->
-<!--                </configuration>-->
-<!--                <executions>-->
-<!--                    <execution>-->
-<!--                        <id>install-jar-lib</id>-->
-<!--                        <goals>-->
-<!--                            <goal>install-file</goal>-->
-<!--                        </goals>-->
-<!--                        <phase>validate</phase>-->
-<!--                    </execution>-->
-<!--                </executions>-->
-<!--            </plugin>-->
-
             <!-- code formatting -->
             <plugin>
                 <groupId>com.github.tashoyan</groupId>
@@ -316,9 +237,47 @@
                         </goals>
                         <configuration>
                             <args>
-                                <arg>-deprecation</arg>
-                                <arg>-dependencyfile</arg>
-                                <arg>${project.build.directory}/.scala_dependencies</arg>
+                                <arg>-deprecation</arg>                      <!--  Emit warning and location for usages of deprecated APIs. -->
+                                <arg>-encoding</arg> <arg>utf-8</arg>        <!--  Specify character encoding used by source files. -->
+                                <arg>-explaintypes</arg>                     <!--  Explain type errors in more detail. -->
+                                <arg>-feature</arg>                          <!--  Emit warning and location for usages of features that should be imported explicitly. -->
+                                <arg>-unchecked</arg>                        <!--  Enable additional warnings where generated code depends on assumptions. -->
+                                <arg>-Xcheckinit</arg>                       <!--  Wrap field accessors to throw an exception on uninitialized access. -->
+                                <arg>-Xfatal-warnings</arg>                  <!--  Fail the compilation if there are any warnings. -->
+                                <arg>-Xfuture</arg>                          <!--  Turn on future language features. -->
+                                <arg>-Xlint:adapted-args</arg>               <!--  Warn if an argument list is modified to match the receiver. -->
+                                <arg>-Xlint:by-name-right-associative</arg>  <!--  By-name parameter of right associative operator. -->
+                                <arg>-Xlint:constant</arg>                   <!--  Evaluation of a constant arithmetic expression results in an error. -->
+                                <arg>-Xlint:delayedinit-select</arg>         <!--  Selecting member of DelayedInit. -->
+                                <arg>-Xlint:doc-detached</arg>               <!--  A Scaladoc comment appears to be detached from its element. -->
+                                <arg>-Xlint:inaccessible</arg>               <!--  Warn about inaccessible types in method signatures. -->
+                                <arg>-Xlint:infer-any</arg>                  <!--  Warn when a type argument is inferred to be `Any`. -->
+                                <arg>-Xlint:missing-interpolator</arg>       <!--  A string literal appears to be missing an interpolator id. -->
+                                <arg>-Xlint:nullary-override</arg>           <!--  Warn when non-nullary `def f()' overrides nullary `def f'. -->
+                                <arg>-Xlint:nullary-unit</arg>               <!--  Warn when nullary methods return Unit. -->
+                                <arg>-Xlint:option-implicit</arg>            <!--  Option.apply used implicit view. -->
+                                <arg>-Xlint:package-object-classes</arg>     <!--  Class or object defined in package object. -->
+                                <arg>-Xlint:poly-implicit-overload</arg>     <!--  Parameterized overloaded implicit methods are not visible as view bounds. -->
+                                <arg>-Xlint:private-shadow</arg>             <!--  A private field (or class parameter) shadows a superclass field. -->
+                                <arg>-Xlint:stars-align</arg>                <!--  Pattern sequence wildcard must align with sequence component. -->
+                                <arg>-Xlint:type-parameter-shadow</arg>      <!--  A local type parameter shadows a type already in scope. -->
+                                <arg>-Xlint:unsound-match</arg>              <!--  Pattern match may not be typesafe. -->
+                                <arg>-Yno-adapted-args</arg>                 <!--  Do not adapt an argument list (either by inserting () or creating a tuple) to match the receiver. -->
+                                <arg>-Ypartial-unification</arg>             <!--  Enable partial unification in type constructor inference -->
+                                <arg>-Ywarn-dead-code</arg>                  <!--  Warn when dead code is identified. -->
+                                <arg>-Ywarn-extra-implicit</arg>             <!--  Warn when more than one implicit parameter section is defined. -->
+                                <arg>-Ywarn-inaccessible</arg>               <!--  Warn about inaccessible types in method signatures. -->
+                                <arg>-Ywarn-infer-any</arg>                  <!--  Warn when a type argument is inferred to be `Any`. -->
+                                <arg>-Ywarn-nullary-override</arg>           <!--  Warn when non-nullary `def f()' overrides nullary `def f'. -->
+                                <arg>-Ywarn-nullary-unit</arg>               <!--  Warn when nullary methods return Unit. -->
+                                <arg>-Ywarn-numeric-widen</arg>              <!--  Warn when numerics are widened. -->
+                                <arg>-Ywarn-unused:implicits</arg>           <!--  Warn if an implicit parameter is unused. -->
+                                <arg>-Ywarn-unused:imports</arg>             <!--  Warn if an import selector is not referenced. -->
+                                <arg>-Ywarn-unused:locals</arg>              <!--  Warn if a local definition is unused. -->
+                                <arg>-Ywarn-unused:params</arg>              <!--  Warn if a value parameter is unused. -->
+                                <arg>-Ywarn-unused:patvars</arg>             <!--  Warn if a variable bound in a pattern is unused. -->
+                                <arg>-Ywarn-unused:privates</arg>            <!--  Warn if a private member is unused. -->
+                                <arg>-Ywarn-value-discard</arg>              <!--  Warn when non-Unit expression results are unused. -->
                             </args>
                         </configuration>
                     </execution>
