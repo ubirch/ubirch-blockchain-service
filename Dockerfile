@@ -1,4 +1,4 @@
-FROM azul/zulu-openjdk:8u302-8.56.0.21
+FROM azul/zulu-openjdk:8u332-8.62.0.19
 ARG JAR_LIBS
 ARG JAR_FILE
 ARG VERSION
