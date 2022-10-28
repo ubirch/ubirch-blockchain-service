@@ -1,6 +1,5 @@
 package com.ubirch.services
 
-import com.ubirch.jmx.BlockchainJmx
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }
@@ -99,13 +98,11 @@ object BlockchainProcessors {
     import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
     import org.web3j.protocol.core.{ DefaultBlockParameter, DefaultBlockParameterName }
     import org.web3j.protocol.http.HttpService
-    import org.web3j.utils.{ Convert, Numeric }
+    import org.web3j.utils.Numeric
 
     final val credentialsPathAndFileName = config.getString("credentialsPathAndFileName")
     final val password = config.getString("password")
     final val address = config.getString("toAddress")
-    final val bootGasPrice = config.getString("gasPrice")
-    final val bootGasLimit: BigInt = config.getString("gasLimit").toInt
     final val networkInfo = config.getString("networkInfo")
     final val networkType = config.getString("networkType")
     final val maybeChainId = Try(config.getLong("chainId")).filter(_ > 0).toOption
@@ -113,71 +110,22 @@ object BlockchainProcessors {
     final val DEFAULT_SLEEP_MILLIS = config.getLong("defaultSleepMillisForReceipt")
     final val MAX_RECEIPT_ATTEMPTS = config.getInt("maxReceiptAttempts")
     final val checkBalanceEveryInSeconds = config.getInt("checkBalanceEveryInSeconds")
-    final val windowSize: Int = config.getInt("windowSize")
-    final val stepUpPercentage: Double = config.getDouble("stepUpPercentage")
-    final val stepDownPercentage: Double = config.getDouble("stepDownPercentage")
-    final val durationLimit: Double = config.getDouble("durationLimit")
-    final val stepDownPercentageAFT: Double = config.getDouble("stepDownPercentageAFT")
-    final val maxStepsDownAFT: Int = config.getInt("maxStepsDownAFT")
-    final val calcType: String = config.getString("calcType")
 
     final val api = Web3j.build(new HttpService(url))
     final val credentials = WalletUtils.loadCredentials(password, new java.io.File(credentialsPathAndFileName))
     final val balanceCancelable = Balance.start(checkBalanceEveryInSeconds seconds)
 
-    final val consumptionCalc: ConsumptionCalc = if (calcType == "risky") {
-      new PersistentConsumptionCalc(
-        Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
-        bootGasLimit,
-        windowSize,
-        stepUpPercentage,
-        stepDownPercentage,
-        stepDownPercentageAFT,
-        maxStepsDownAFT
-      )
-    } else if (calcType == "conservative") {
-      new ConservativeConsumptionCalc(
-        Convert.toWei(bootGasPrice, Convert.Unit.GWEI).toBigInteger,
-        bootGasLimit,
-        windowSize,
-        stepUpPercentage,
-        stepDownPercentage
-      )
-    } else {
-      throw new Exception("No calc selected.")
-    }
-
-    final val jmxManagement = new BlockchainJmx(namespace, consumptionCalc)
-    jmxManagement.createBean()
-
     logger.info(
       "Basic values := " +
         "url={} " +
         "address={} " +
-        "boot_gas_price={} " +
         "boot_gas_limit={} " +
         "chain_id={} " +
-        "check_balance_every_in_seconds={} " +
-        "window_size={} " +
-        "step_up_percentage={} " +
-        "step_down_percentage={} " +
-        "duration_limit={}ns " +
-        "step_down_percentage_aft={} " +
-        "max_steps_down_aft={} " +
-        "calc_type={} ",
+        "check_balance_every_in_seconds={} ",
       url,
       address,
-      bootGasPrice,
-      bootGasLimit,
       maybeChainId.getOrElse("-"),
-      checkBalanceEveryInSeconds,
-      windowSize,
-      stepUpPercentage,
-      stepDownPercentage,
-      durationLimit,
-      stepDownPercentageAFT,
-      maxStepsDownAFT,
-      calcType
+      checkBalanceEveryInSeconds
     )
 
     def process(data: String): Either[Seq[Response], Throwable] = {
@@ -251,8 +199,6 @@ object BlockchainProcessors {
 
           }
 
-          consumptionCalc.addStatistics(context.stats)
-
           Left(List(response))
 
         }
@@ -270,14 +216,8 @@ object BlockchainProcessors {
             logger.error("Seems that the Gas Limit is too low, try increasing it.")
             Left(Nil)
           } else if (e.errorCode == -32010 && e.errorMessage.contains("another transaction with same nonce")) {
-            //We simulate a jump out to tell the calculator to increase and get unstuck
-
-            context = context
-              .addTxHashDuration(durationLimit.toLong + 1000L)
 
             logger.info("status=KO[jump-simulation] {}", context.toString)
-
-            consumptionCalc.setJump(true)
 
             Right(NeedForPauseException("Possible transaction running", e.errorMessage))
 
@@ -406,7 +346,6 @@ object BlockchainProcessors {
 
     sys.addShutdownHook {
       logger.info("Shutting down blockchain_processor_system={} and balance monitor", namespace.value)
-      jmxManagement.unregisterMBean()
       balanceCancelable.cancel()
       api.shutdown()
     }
@@ -436,16 +375,6 @@ object BlockchainProcessors {
 
       def transactionFee: BigInt = gasPrice * gasUsed
       def usedDelta: Double = gasUsed.toDouble / gasLimit.toDouble
-
-      def stats: StatsData = {
-        StatsData(
-          duration = txHashDuration,
-          price = gasPrice,
-          limit = gasLimit,
-          unit = gasUsed,
-          usedDelta = usedDelta
-        )
-      }
 
       override def toString: String = {
         s"time_used=${txHashDuration}ns tx_fee=$transactionFee gas_price=$gasPrice gas_limit=$gasLimit gas=$gasUsed cumulative_gas_used=$cumulativeGasUsed used_against_limit=${usedDelta * 100}% transaction_hash=$txHash"
