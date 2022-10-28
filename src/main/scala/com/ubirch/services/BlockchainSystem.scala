@@ -1,20 +1,22 @@
 package com.ubirch.services
 
-import java.net.URL
-
-import com.typesafe.config.Config
-import com.typesafe.scalalogging.{ LazyLogging, Logger }
 import com.ubirch.jmx.BlockchainJmx
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.util.Exceptions.NeedForPauseException
 import com.ubirch.models.{ BalanceGaugeMetric, EthereumInternalMetrics, Response, TimeMetrics }
 import com.ubirch.util.Exceptions._
 import com.ubirch.util.Time
+
+import com.typesafe.config.Config
+import com.typesafe.scalalogging.{ LazyLogging, Logger }
 import monix.eval.Task
 import org.iota.client.Client
 import org.iota.client.local.NativeAPI
 import org.slf4j.LoggerFactory
+import org.web3j.protocol.core.methods.request.Transaction
 
+import java.math.BigInteger
+import java.net.URL
 import scala.annotation.tailrec
 import scala.compat.java8.OptionConverters._
 import scala.concurrent.blocking
@@ -91,6 +93,7 @@ object BlockchainProcessors {
     )
 
     import EthereumBaseProcessor._
+
     import org.web3j.crypto.{ Credentials, RawTransaction, TransactionEncoder, WalletUtils }
     import org.web3j.protocol.Web3j
     import org.web3j.protocol.core.methods.response.{ EthSendTransaction, TransactionReceipt }
@@ -179,13 +182,11 @@ object BlockchainProcessors {
 
     def process(data: String): Either[Seq[Response], Throwable] = {
 
-      val (gasPrice: BigInt, gasLimit: BigInt) = consumptionCalc.calcGasValues(durationLimit)
-
       var context = Context.empty
 
       try {
 
-        val (isOK, verificationMessage) = verifyBalance(gasPrice)
+        val (isOK, verificationMessage) = verifyBalance
 
         if (isOK.isEmpty) {
           logger.info("Balance Monitor not yet started")
@@ -195,17 +196,30 @@ object BlockchainProcessors {
           Left(Nil)
         } else {
 
-          gasPriceGauge.labels(namespace.value).set(gasPrice.toDouble)
-          gasLimitGauge.labels(namespace.value).set(gasLimit.toDouble)
-
           val pendingNextCount = getCount(address, DefaultBlockParameterName.PENDING)
           val latestNextCount = getCount(address)
 
           logger.info("status=OK[get_nonce] next_count={} pendingNextCount={}", latestNextCount, pendingNextCount)
 
-          val hexMessage = createRawTransactionAsHexMessage(address, data, gasPrice, gasLimit, latestNextCount, maybeChainId, credentials)
+          val transaction = Transaction.createEthCallTransaction(address, address, Numeric.toHexString(data.getBytes()))
 
-          logger.info("status=OK[in_process] gas_price={} gas_limit={} next_count={} pendingNextCount={} chain_id={} data={} hex={}", gasPrice, gasLimit, latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
+          val gasPrice = getGasPrice
+          val gasLimitEstimated = estimateGas(transaction)
+
+          gasPriceGauge.labels(namespace.value).set(gasPrice.doubleValue())
+          gasLimitGauge.labels(namespace.value).set(gasLimitEstimated.doubleValue())
+
+          val hexMessage = createRawTransactionAsHexMessage(
+            address,
+            Numeric.toHexString(data.getBytes()),
+            BigInt((gasPrice.longValue() * 1.1).toLong).bigInteger,
+            BigInt(gasLimitEstimated),
+            latestNextCount,
+            maybeChainId,
+            credentials
+          )
+
+          logger.info("status=OK[in_process] gas_price={} gas_limit={} next_count={} pendingNextCount={} chain_id={} data={} hex={}", gasPrice, gasLimitEstimated, latestNextCount, pendingNextCount, maybeChainId.getOrElse("None"), data, hexMessage)
 
           val txHash = sendTransaction(hexMessage)
           val timedReceipt = Time.time(getReceipt(txHash))
@@ -215,7 +229,7 @@ object BlockchainProcessors {
               .addTxHash(txHash)
               .addTxHashDuration(timedReceipt.elapsed)
               .addGasPrice(gasPrice)
-              .addGasLimit(gasLimit)
+              .addGasLimit(gasLimitEstimated)
               .addGasUsed(receipt.getGasUsed)
               .addCumulativeGasUsed(receipt.getCumulativeGasUsed)
 
@@ -228,7 +242,7 @@ object BlockchainProcessors {
               .addTxHash(txHash)
               .addTxHashDuration(timedReceipt.elapsed)
               .addGasPrice(gasPrice)
-              .addGasLimit(gasLimit)
+              .addGasLimit(gasLimitEstimated)
 
             timeoutsCounter.labels(namespace.value).inc()
 
@@ -253,15 +267,13 @@ object BlockchainProcessors {
             logger.error("Insufficient funds current_balance={}", Balance.currentBalance)
             Left(Nil)
           } else if (e.errorCode == -32000 && e.errorMessage.contains("intrinsic gas too low")) {
-            logger.error("Seems that the Gas Limit is too low, try increasing it. gas_limit={}", gasLimit)
+            logger.error("Seems that the Gas Limit is too low, try increasing it.")
             Left(Nil)
           } else if (e.errorCode == -32010 && e.errorMessage.contains("another transaction with same nonce")) {
             //We simulate a jump out to tell the calculator to increase and get unstuck
 
             context = context
               .addTxHashDuration(durationLimit.toLong + 1000L)
-              .addGasPrice(gasPrice)
-              .addGasLimit(gasLimit)
 
             logger.info("status=KO[jump-simulation] {}", context.toString)
 
@@ -294,14 +306,12 @@ object BlockchainProcessors {
 
     }
 
-    def verifyBalance(gasPrice: BigInt): (Option[Boolean], String) = {
+    def verifyBalance: (Option[Boolean], String) = {
       val balance = Balance.currentBalance
       if (balance < 0) {
         (None, "Balance not yet checked. Retrying")
       } else if (balance == 0) {
         (Option(false), "Current balance is zero")
-      } else if (balance < gasPrice.bigInteger) {
-        (Option(false), "Current balance is less than the configured gas price")
       } else {
         (Option(true), "All is good")
       }
@@ -380,6 +390,18 @@ object BlockchainProcessors {
       val transactionCountResponse = api.ethGetBalance(address, blockParameter).send()
       if (transactionCountResponse.hasError) throw GettingBalanceException(s"Error getting balance for address [$address]", Option(transactionCountResponse.getError))
       (address, transactionCountResponse.getBalance)
+    }
+
+    def estimateGas(transaction: Transaction): BigInteger = {
+      val gasLimitEstimatedResponse = api.ethEstimateGas(transaction).send()
+      if (gasLimitEstimatedResponse.hasError) throw EstimatingTransactionException(s"Error estimating gas limit for address [$address]", Option(gasLimitEstimatedResponse.getError))
+      gasLimitEstimatedResponse.getAmountUsed
+    }
+
+    def getGasPrice: BigInteger = {
+      val gasPriceResponse = api.ethGasPrice().send()
+      if (gasPriceResponse.hasError) throw GettingGasPriceException(s"Error getting gas price for address [$address]", Option(gasPriceResponse.getError))
+      gasPriceResponse.getGasPrice
     }
 
     sys.addShutdownHook {
@@ -520,6 +542,7 @@ object BlockchainProcessors {
 
     def send(index: String, message: String) = {
       import monix.execution.Scheduler.Implicits.global
+
       import scala.concurrent.duration._
 
       val deadline = 55.seconds
