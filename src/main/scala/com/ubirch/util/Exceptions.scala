@@ -24,8 +24,10 @@ object Exceptions {
   case class NonceHasNotChangedException(override val message: String, override val error: Option[Error]) extends EthereumBlockchainException(message, error, isCritical = false)
   case class GettingNonceException(override val message: String, override val error: Option[Error]) extends EthereumBlockchainException(message, error, isCritical = false)
   case class GettingBalanceException(override val message: String, override val error: Option[Error]) extends EthereumBlockchainException(message, error, isCritical = false)
+  case class GettingGasPriceException(override val message: String, override val error: Option[Error]) extends EthereumBlockchainException(message, error, isCritical = false)
   case class SendingTXException(override val message: String, override val error: Option[Error]) extends EthereumBlockchainException(message, error, isCritical = false)
   case class NoTXHashException(override val message: String) extends EthereumBlockchainException(message, None, false)
   case class GettingTXReceiptException(override val message: String, override val error: Option[Error]) extends EthereumBlockchainException(message, error, isCritical = false)
+  case class EstimatingTransactionException(override val message: String, override val error: Option[Error]) extends EthereumBlockchainException(message, error, isCritical = false)
 
 }

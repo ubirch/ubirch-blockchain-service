@@ -81,13 +81,6 @@
             <version>${scala.version}</version>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/org.apache.commons/commons-math3 -->
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-math3</artifactId>
-            <version>3.6</version>
-        </dependency>
-
         <dependency>
             <groupId>com.ubirch</groupId>
             <artifactId>ubirch-kafka-express</artifactId>
@@ -109,7 +102,7 @@
         <dependency>
             <groupId>org.web3j</groupId>
             <artifactId>core</artifactId>
-            <version>4.6.0</version>
+            <version>5.0.0</version>
         </dependency>
 
         <dependency>
