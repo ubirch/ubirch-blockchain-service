@@ -1,8 +1,10 @@
 package com.ubirch.jmx
 
-import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.services.BlockchainSystem.Namespace
 import com.ubirch.services.Flush
+
+import com.typesafe.scalalogging.LazyLogging
+
 import javax.management._
 
 /**

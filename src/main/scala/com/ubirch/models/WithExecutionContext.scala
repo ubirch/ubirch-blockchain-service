@@ -1,9 +1,8 @@
 package com.ubirch.models
 
-import java.util.concurrent.Executors
-
 import monix.execution.Scheduler
 
+import java.util.concurrent.Executors
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor }
 
 /**

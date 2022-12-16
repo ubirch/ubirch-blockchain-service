@@ -3,6 +3,7 @@ package com.ubirch.util
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.services.BlockchainProcessors.EthereumProcessor
 import com.ubirch.services.BlockchainSystem.Namespace
+
 import org.web3j.protocol.core.DefaultBlockParameterName
 
 object EthereumQuickAccess extends ConfigBase {

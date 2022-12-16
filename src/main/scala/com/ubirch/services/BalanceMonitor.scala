@@ -1,11 +1,11 @@
 package com.ubirch.services
 
-import java.util.concurrent.atomic.AtomicReference
+import com.ubirch.models.WithExecutionContext
 
 import com.typesafe.scalalogging.LazyLogging
-import com.ubirch.models.WithExecutionContext
 import monix.execution.Cancelable
 
+import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.duration._
 import scala.language.postfixOps
 

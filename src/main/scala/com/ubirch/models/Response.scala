@@ -1,11 +1,10 @@
 package com.ubirch
 package models
 
-import java.util.Date
-
 import org.json4s.JsonDSL._
 import org.json4s.{ CustomSerializer, JObject, MappingException }
 
+import java.util.Date
 import scala.util.control.NonFatal
 
 /**

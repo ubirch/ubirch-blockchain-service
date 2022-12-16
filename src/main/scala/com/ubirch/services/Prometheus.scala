@@ -1,8 +1,9 @@
 package com.ubirch.services
 
-import com.typesafe.scalalogging.LazyLogging
 import com.ubirch.kafka.express.ConfigBase
 import com.ubirch.kafka.metrics.PrometheusMetricsHelper
+
+import com.typesafe.scalalogging.LazyLogging
 import io.prometheus.client.exporter.HTTPServer
 
 /**

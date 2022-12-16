@@ -1,8 +1,8 @@
 package com.ubirch.jmx
 
-import java.lang.management.ManagementFactory
-
 import com.typesafe.scalalogging.LazyLogging
+
+import java.lang.management.ManagementFactory
 import javax.management.{ InstanceNotFoundException, MBeanServer, ObjectName }
 
 /**

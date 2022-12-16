@@ -1,6 +1,7 @@
 package com
 
 import com.ubirch.models.ResponseSerializer
+
 import org.json4s.jackson.Serialization
 import org.json4s.{ Extraction, Formats, JValue, NoTypeHints, jackson }
 
